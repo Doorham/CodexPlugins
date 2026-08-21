@@ -1,13 +1,15 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.10.1",
+  "version": "0.10.2",
+  "license": "Apache-2.0",
   "developers": ["Doorham", "XY", "Althy"],
   "update": {
     "remote": "origin",
     "branch": "main",
     "host": "github.com",
-    "privateRepository": true
+    "repository": "Doorham/CodexPlugins",
+    "privateRepository": false
   },
   "modules": [
     {"id": "codex-system-proxy", "version": "1.0.1", "developers": ["Althy"]},

@@ -2,12 +2,12 @@
 
 ## 克隆提示 Repository not found
 
-对 Private 仓库，这通常不是仓库真的不存在，而是当前 GitHub 身份没有访问权限。
+本项目是公开仓库，正常 clone/pull 不需要账号权限：
 
-1. 确认地址为 `https://github.com/Doorham/CodexTools.git`。
-2. 确认仓库所有者已给当前账号访问权限。
-3. 在 Git Credential Manager 弹出的浏览器中，由本人完成登录和验证。
-4. 如果电脑缓存了错误账号，请在 Windows“凭据管理器”中只删除对应的 GitHub 凭据，然后重新克隆；不要删除无关凭据。
+1. 确认地址为 `https://github.com/Doorham/CodexPlugins.git`。
+2. 确认浏览器和 Git 能访问 `github.com`。
+3. 检查命令中没有多余空格、错字或旧仓库名。
+4. 如果 Git 强制使用缓存的错误凭据，只在 Windows“凭据管理器”中移除对应的 GitHub 凭据，不要删除无关凭据。
 
 不要把密码或 Token 直接拼进 clone 命令。
 
@@ -85,7 +85,7 @@ git remote get-url origin
 网络版 `origin` 应为 GitHub 地址。确认目录无误后执行：
 
 ```powershell
-git remote set-url origin https://github.com/Doorham/CodexTools.git
+git remote set-url origin https://github.com/Doorham/CodexPlugins.git
 ```
 
 内网源码工区的 Y 盘 `origin` 不属于网络版，不要修改。
@@ -107,9 +107,9 @@ git diff
 
 `diverged` 表示本地与 GitHub 已有不同提交。请停止自动处理并联系维护人员，不要强推、强拉、硬重置或改写 GitHub `main`。
 
-## GitHub 身份验证失败
+## GitHub 访问或身份验证失败
 
-确认当前账号仍有 Private 仓库权限，并通过 Git Credential Manager 或 SSH 重新授权。不要把密码、验证码、Token 或私钥发送给维护人员。维护人员只需要错误文字和不含秘密的远程地址。
+只读更新失败时先检查公开仓库地址和网络，不应要求账号密码。只有贡献者推送代码时才需要通过 Git Credential Manager 或 SSH 授权。不要把密码、验证码、Token 或私钥发送给维护人员；报障只提供错误文字和不含秘密的远程地址。
 
 ## “国内网站直连”没有生效
 

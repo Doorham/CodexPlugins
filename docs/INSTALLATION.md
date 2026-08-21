@@ -4,28 +4,21 @@
 
 - Windows 10 或 Windows 11。
 - 能够访问 `github.com` 和 Python 包索引的网络。
-- 拥有 `Doorham/CodexTools` 私有仓库访问权限的 GitHub 账号。
 - Python 3.11 或更高版本。
-- 建议安装官方 Git for Windows，因为它包含 Git Credential Manager，首次访问私有仓库时可通过浏览器完成授权。
+- 建议安装官方 Git for Windows。公开读取和克隆不要求 GitHub 账号；只有参与开发并推送代码时才需要登录授权。
 - Microsoft Edge WebView2 Runtime。Windows 10/11 通常已预装。
 
-## 2. 克隆私有仓库
+## 2. 克隆公开仓库
 
 打开 PowerShell，执行：
 
 ```powershell
 New-Item -ItemType Directory -Path C:\Works -Force
-git clone https://github.com/Doorham/CodexTools.git C:\Works\CodexTools
-Set-Location C:\Works\CodexTools
+git clone https://github.com/Doorham/CodexPlugins.git C:\Works\CodexPlugins
+Set-Location C:\Works\CodexPlugins
 ```
 
-首次克隆时，Git Credential Manager 可能打开浏览器：
-
-1. 亲自登录有权限的 GitHub 账号。
-2. 亲自完成密码、验证码和安全验证。
-3. 不要把密码或 Token 写入仓库、脚本、命令行历史或文档。
-
-如果出现 `Repository not found`，通常表示当前 GitHub 账号没有权限，或 Git Credential Manager 里保存了另一个账号。
+公开仓库的 clone/pull 不需要密码、验证码或 Token。如果出现 `Repository not found`，先核对仓库地址和网络；不要把凭据写入仓库、脚本、命令行历史或文档。
 
 ## 3. 准备 Python 环境
 

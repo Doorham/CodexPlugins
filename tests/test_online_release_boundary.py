@@ -44,7 +44,9 @@ class OnlineReleaseBoundaryTests(unittest.TestCase):
         release_ids = {item["id"] for item in release["modules"]}
         self.assertEqual(release_ids, plugin_ids)
         self.assertEqual(release["update"]["host"], "github.com")
-        self.assertTrue(release["update"]["privateRepository"])
+        self.assertEqual(release["update"]["repository"], "Doorham/CodexPlugins")
+        self.assertFalse(release["update"]["privateRepository"])
+        self.assertEqual(release["license"], "Apache-2.0")
 
     def test_no_binary_payloads_are_shipped(self) -> None:
         forbidden_suffixes = {".exe", ".dll", ".msi", ".msix", ".zip", ".7z", ".rar", ".pfx", ".pem", ".key"}

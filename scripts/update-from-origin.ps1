@@ -222,7 +222,7 @@ try {
 catch {
     $message = [string]$_.Exception.Message
     if ($message -match '(Authentication failed|could not read Username|Permission denied|Repository not found)') {
-        $message = 'GitHub 身份验证失败。请先在 Git Credential Manager 或 SSH 中完成该私有仓库的登录授权。'
+        $message = 'GitHub 访问失败。请检查公开仓库地址和网络；只有推送代码时才需要 GitHub 登录授权。'
     }
     Write-Result @{ ok = $false; status = 'error'; updated = $false; message = "更新失败：$message" } 1
 }

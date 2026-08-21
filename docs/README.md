@@ -1,6 +1,6 @@
 # CodexTools Online 中文文档
 
-CodexTools Online 是面向 Windows 电脑的本地工具箱。本网络版通过 GitHub 私有仓库同步，不依赖任何公司网络盘或内网服务。
+CodexPlugins 是面向 Windows 电脑的开源 Codex 插件库。本网络版通过 GitHub 公开仓库同步，不依赖任何公司网络盘或内网服务。
 
 ## 我应该先看哪一篇？
 
@@ -19,6 +19,7 @@ CodexTools Online 是面向 Windows 电脑的本地工具箱。本网络版通�
 - 网络版不包含网络驱动器映射功能，也不包含依赖外部 DLL 的 Logitech G435 功能。
 - 网络版的客户端更新源固定为当前克隆的 GitHub `origin/main`。
 - `ONLINE-RELEASE.json` 是版本、模块列表和更新源的机器可读权威文件。
+- 源码采用 Apache License 2.0，具体条款见仓库根目录 `LICENSE`。
 
 ## 获取帮助时请提供
 

@@ -2,7 +2,7 @@
 
 ## 更新模型
 
-网络版把 GitHub 私有仓库 `Doorham/CodexTools` 作为唯一客户端更新源：
+网络版把 GitHub 公开仓库 `Doorham/CodexPlugins` 作为唯一客户端更新源：
 
 - 远程名固定为 `origin`。
 - 正式分支固定为 `main`。
@@ -52,7 +52,7 @@ Get-Content .\ONLINE-RELEASE.json
 
 1. 当前分支是 `main`。
 2. 工作树没有未提交改动。
-3. `origin` 指向 `https://github.com/Doorham/CodexTools.git` 或对应的 GitHub SSH 地址。
+3. `origin` 指向 `https://github.com/Doorham/CodexPlugins.git` 或对应的 GitHub SSH 地址。
 4. `ONLINE-RELEASE.json` 的版本与界面版本一致。
 
 ## 修复 origin 地址
@@ -66,7 +66,7 @@ git remote get-url origin
 只有在确认当前目录是网络版仓库后，才执行：
 
 ```powershell
-git remote set-url origin https://github.com/Doorham/CodexTools.git
+git remote set-url origin https://github.com/Doorham/CodexPlugins.git
 ```
 
 不要把内网版 `C:\Works\CodexTools` 的 Y 盘 `origin` 改成 GitHub。建议外网电脑把网络版克隆到独立目录，避免两个版本混用。
@@ -77,14 +77,14 @@ git remote set-url origin https://github.com/Doorham/CodexTools.git
 
 ```powershell
 New-Item -ItemType Directory -Path C:\Works -Force
-git clone https://github.com/Doorham/CodexTools.git C:\Works\CodexTools
-Set-Location C:\Works\CodexTools
+git clone https://github.com/Doorham/CodexPlugins.git C:\Works\CodexPlugins
+Set-Location C:\Works\CodexPlugins
 .\scripts\bootstrap.ps1
 .\scripts\build-helpers.ps1
 .\scripts\install-desktop-shortcut.ps1
 ```
 
-GitHub 私有仓库权限必须由仓库所有者授予。每位使用者应使用自己的 GitHub 身份，不共享密码、验证码、Token、SSH 私钥或 Git Credential Manager 凭据。
+公开读取和更新不要求 GitHub 账号。参与开发并推送代码时，每位贡献者应使用自己的 GitHub 身份，不共享密码、验证码、Token、SSH 私钥或 Git Credential Manager 凭据。
 
 ## 更新时保留与不保留的内容
 
@@ -94,4 +94,4 @@ GitHub 私有仓库权限必须由仓库所有者授予。每位使用者应使�
 
 ## 维护人员发布规则
 
-外网电脑只消费 GitHub `main` 和正式标签。维护人员发布前必须完成版本、源码、敏感信息、测试和文档审计；创建语义化标签后，再把 `main` 与必要标签推送到私有仓库。网络版发布不得反向改变内网 Hub 的权威版本或发布状态。
+外网电脑只消费 GitHub `main` 和正式标签。维护人员发布前必须完成版本、源码、敏感信息、测试和文档审计；创建语义化标签后，再把 `main` 与必要标签推送到公开仓库。网络版发布不得反向改变内网 Hub 的权威版本或发布状态。

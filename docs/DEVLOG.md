@@ -9,6 +9,13 @@
 
 ## 变更记录
 
+### 2026-08-22 · v0.10.2 · Public 开源发布 · Althy
+
+- GitHub 正式更新源确定为公开仓库 `Doorham/CodexPlugins`。
+- 经项目所有者明确授权，源码采用 Apache License 2.0 开源。
+- 公开安装目录改为 `C:\Works\CodexPlugins`，避免与内网源码工区混用。
+- 文档和故障提示从私有仓库模式调整为 Public 公开读取模式。
+
 ### 2026-08-22 · v0.10.1 · 中文文档与网络版文案 · Althy
 
 - 新增安装、使用、功能、更新、安全隐私与故障排查的完整中文文档。
@@ -22,4 +29,4 @@
 - 移除 Logitech G435 及其第三方 DLL；保留有可维护源码的 Arctis Nova 5 功能，不保留原始 ZIP。
 - 更新器改为验证 GitHub 远程并仅从 `origin/main` 快进更新。
 
-未解决：GitHub 私有仓库尚未创建；完成目标账号确认后再推送。
+发布目标：GitHub Public 仓库 `Doorham/CodexPlugins`；客户端只从该仓库的 `origin/main` 快进更新。
