@@ -1,0 +1,23 @@
+{
+  "id": "private-my-tool",
+  "name": "我的私人小工具",
+  "moduleVersion": "1.0.0",
+  "developers": ["你的署名"],
+  "description": "仅在当前电脑显示和运行的私人插件。",
+  "category": "私人",
+  "icon": "◇",
+  "accent": "#8b5cf6",
+  "mode": "background",
+  "handler": "process_app",
+  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\MyPrivateTool\\MyPrivateTool.exe",
+  "processName": "MyPrivateTool.exe",
+  "startup": {
+    "type": "run",
+    "name": "My Private Tool"
+  },
+  "actions": ["toggle_enabled"],
+  "uiActions": [
+    {"id": "toggle_enabled", "label": "切换状态", "kind": "toggle"}
+  ],
+  "agentAccess": {"enabled": true, "actions": ["toggle_enabled"]}
+}

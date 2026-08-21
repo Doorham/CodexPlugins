@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "edition": "online",
+  "version": "0.10.0",
+  "developers": ["Doorham", "XY", "Althy"],
+  "update": {
+    "remote": "origin",
+    "branch": "main",
+    "host": "github.com",
+    "privateRepository": true
+  },
+  "modules": [
+    {"id": "codex-system-proxy", "version": "1.0.1", "developers": ["Althy"]},
+    {"id": "cn-proxy-bypass", "version": "1.2.0", "developers": ["Doorham", "Althy"]},
+    {"id": "updream-clipboard-cleaner", "version": "1.0.2", "developers": ["Doorham", "XY"]},
+    {"id": "codex-answer-chime", "version": "1.0.1", "developers": ["Doorham"]},
+    {"id": "arctis-nova-5-battery", "version": "1.0.2", "developers": ["Doorham"]}
+  ],
+  "excludedFeatures": [
+    "codex-network-drive-access",
+    "logitech-g435-battery"
+  ],
+  "excludedContent": [
+    "internal network addresses and share names",
+    "internal hub and handoff history",
+    "third-party binary archives and libraries",
+    "promotion authorization summaries",
+    "local private state"
+  ]
+}

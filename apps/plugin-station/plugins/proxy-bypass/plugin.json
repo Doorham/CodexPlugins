@@ -1,0 +1,43 @@
+{
+  "id": "cn-proxy-bypass",
+  "name": "国内网站直连",
+  "moduleVersion": "1.2.0",
+  "developers": ["Doorham", "Althy"],
+  "description": "同时兼容 Aurora 与 Clash Verge Rev，让指定国内网站和应用服务直接连接。白名单会持久写入 Clash 的系统代理绕过配置，订阅更新和代理重启不会将其清除。",
+  "category": "网络",
+  "icon": "↗",
+  "accent": "#f59e0b",
+  "mode": "system",
+  "handler": "proxy_override",
+  "recordFolder": "%LOCALAPPDATA%\\CompanyAIHelpers\\ProxyOverrideBypass",
+  "customDataPolicy": {
+    "scope": "local-private",
+    "paths": [
+      "%LOCALAPPDATA%\\CompanyAIHelpers\\ProxyOverrideBypass\\custom-domains.json",
+      "%APPDATA%\\io.github.clash-verge-rev.clash-verge-rev\\verge.yaml",
+      "%LOCALAPPDATA%\\CompanyAIHelpers\\ProxyOverrideBypass\\Backups"
+    ],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true
+  },
+  "domains": [
+    "updream.cn", "updream.bilibili.com", "bilibili.com", "bilivideo.com", "hdslb.com",
+    "biliapi.net", "biliapi.com", "bilicdn1.com", "biligame.com", "weixin.qq.com",
+    "wechat.com", "servicewechat.com", "wechatapp.com", "weixinbridge.com", "weixinstatic.com",
+    "qpic.cn", "qlogo.cn", "gtimg.com", "finder.video.qq.com", "wxapp.tc.qq.com",
+    "res.wx.qq.com", "weixin110.qq.com", "wechatpay.com", "tenpay.com", "douyin.com",
+    "douyinstatic.com", "douyinpic.com", "douyinvod.com", "douyincdn.com", "byteimg.com",
+    "bytecdn.cn", "bytecdn.com", "bytedance.com", "bytedanceapi.com", "bytedns.com",
+    "bytedns1.com", "bytetcc.com", "bytegoofy.com", "ibytedtos.com", "pstatp.com",
+    "snssdk.com", "toutiaoapi.com", "zijieapi.com", "amemv.com", "bdurl.net",
+    "volces.com", "volcengine.com", "queniuso.com", "xiaoheihe.cn", "max-c.com",
+    "maxjia.com", "360.cn", "360safe.com", "360tpcdn.com"
+  ],
+  "actions": ["refresh", "add_domain", "list_domains", "delete_domain"],
+  "uiActions": [
+    {"id": "list_domains", "label": "管理白名单", "kind": "primary", "dialog": "domain"},
+    {"id": "refresh", "label": "刷新网络", "kind": "secondary"}
+  ],
+  "agentAccess": {"enabled": true, "actions": ["refresh"]}
+}

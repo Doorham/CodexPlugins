@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex工具箱网络版</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="window-bar pywebview-drag-region">
+    <div class="window-title">Codex工具箱网络版 <span id="version">v—</span></div>
+    <div class="window-controls">
+      <button data-window="minimize" title="最小化">—</button>
+      <button data-window="maximize" title="最大化">□</button>
+      <button data-window="hide" class="window-close" title="隐藏到后台">×</button>
+    </div>
+  </header>
+  <main>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">C</div>
+        <div><h1>Codex工具箱网络版</h1><p>从 GitHub 安全同步的本地工具包</p></div>
+      </div>
+      <div class="top-actions">
+        <span id="summary" class="summary">读取状态中…</span>
+        <button id="updateButton" class="update-button" title="检查 Y 盘并同步更新">检查更新</button>
+        <span id="clock" class="clock">--:--</span>
+        <button id="refreshButton" class="icon-button" title="刷新">↻</button>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <div class="toolbar-left">
+        <div class="page-tabs" role="tablist" aria-label="插件范围">
+          <button class="page-tab active" data-page="shared" role="tab">公共插件</button>
+          <button class="page-tab" data-page="private" role="tab">私人页面</button>
+        </div>
+        <div id="filters" class="filters"></div>
+      </div>
+      <span id="lastUpdated" class="last-updated">等待本地服务…</span>
+    </section>
+
+    <section id="privateNotice" class="private-notice" hidden>
+      <div><strong>仅保存在这台电脑</strong><span id="privateLayerStatus">私人插件默认不上传 Y 盘、不进入 Git、不同步到其他员工电脑。</span></div>
+      <button id="openPrivateFolder" class="action secondary">打开私人插件目录</button>
+    </section>
+
+    <section id="pluginGrid" class="plugin-grid">
+      <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+    </section>
+  </main>
+
+  <div id="domainModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal">
+      <span class="modal-kicker">DIRECT CONNECTION</span>
+      <h2>管理主站白名单</h2>
+      <p>翻墙后国内网站太卡？在白名单里面加网址就好了。输入 <code>example.com</code> 会同时覆盖主站路径和 <code>*.example.com</code> 的所有下级子域。自定义白名单仅保存在本机，工具箱更新不会覆盖；重复规则不会再次写入。</p>
+      <div class="domain-add-row">
+        <input id="domainInput" type="text" placeholder="example.com" autocomplete="off" spellcheck="false">
+        <button id="saveDomain" class="action primary">加入主站</button>
+      </div>
+      <div id="domainFeedback" class="domain-feedback"></div>
+      <div class="domain-list-head">
+        <strong>当前白名单主站</strong>
+        <span>内置只读 · 自定义可删除</span>
+      </div>
+      <div id="domainList" class="domain-list"></div>
+      <div class="modal-actions">
+        <button id="cancelDomain" class="action secondary">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "id": "arctis-nova-5-battery",
+  "name": "Arctis Nova 5 电量监控",
+  "moduleVersion": "1.0.2",
+  "developers": ["Doorham"],
+  "description": "开启会立即显示耳机电量托盘图标并加入开机自启动；停用会退出监控并取消自启动。",
+  "category": "硬件",
+  "icon": "▰",
+  "accent": "#38bdf8",
+  "mode": "background",
+  "hardwareGate": {
+    "type": "hid_path",
+    "pathContains": "vid_1038&pid_2232&mi_03",
+    "notFoundMessage": "未检测到 Arctis Nova 5 USB 接收器"
+  },
+  "handler": "process_app",
+  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\ArctisNova5BatteryMonitor\\ArctisNova5BatteryMonitor.exe",
+  "installSource": "artifacts/helpers/ArctisNova5BatteryMonitor.exe",
+  "processName": "ArctisNova5BatteryMonitor.exe",
+  "startup": {
+    "type": "shortcut",
+    "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Arctis Nova 5 Battery Monitor.lnk",
+    "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\ArctisNova5BatteryMonitor\\ArctisNova5StartupGate.exe"
+  },
+  "supportFiles": [
+    {
+      "source": "artifacts/helpers/ArctisNova5StartupGate.exe",
+      "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\ArctisNova5BatteryMonitor\\ArctisNova5StartupGate.exe"
+    }
+  ],
+  "actions": ["toggle_enabled"],
+  "uiActions": [
+    {"id": "toggle_enabled", "label": "切换状态", "kind": "toggle"}
+  ],
+  "agentAccess": {"enabled": true, "actions": ["toggle_enabled"]}
+}

@@ -1,0 +1,49 @@
+# Local runtimes and dependency environments
+.runtime/
+.venv/
+venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Build outputs
+artifacts/*
+!artifacts/.gitkeep
+build/
+dist/
+*.exe
+*.dll
+*.pdb
+*.lnk
+*.zip
+*.7z
+*.rar
+*.msi
+*.msix
+*.bin
+*.dat
+
+# Local state and diagnostics
+*.log
+*.tmp
+*.jsonl
+*.sqlite
+*.sqlite3
+listener-status.json
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.idea/
+.vscode/
+*.user
+Thumbs.db
+Desktop.ini
+
+# Local application and Codex state
+.codex/
+CompanyAIHelpers/
