@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "developers": ["Doorham", "XY", "Althy"],
   "update": {
     "remote": "origin",

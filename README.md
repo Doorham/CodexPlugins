@@ -12,7 +12,7 @@ CodexTools Online 是不依赖公司网络盘的网络版工具箱。源码从 G
 ## 快速开始
 
 ```powershell
-git clone https://github.com/<owner>/CodexTools.git C:\Works\CodexTools
+git clone https://github.com/Doorham/CodexTools.git C:\Works\CodexTools
 Set-Location C:\Works\CodexTools
 .\scripts\bootstrap.ps1
 .\scripts\build-helpers.ps1
@@ -23,4 +23,14 @@ Set-Location C:\Works\CodexTools
 
 ## 开发
 
-版本、模块边界和更新源见 `ONLINE-RELEASE.json`，维护纪录见 `docs/DEVLOG.md`。
+详细中文文档：
+
+- [文档导航](docs/README.md)
+- [安装与首次启动](docs/INSTALLATION.md)
+- [界面与日常使用](docs/USER-GUIDE.md)
+- [全部功能说明](docs/FEATURES.md)
+- [GitHub 更新与外网电脑同步](docs/UPDATING.md)
+- [安全与隐私边界](docs/SECURITY-PRIVACY.md)
+- [常见问题与故障排查](docs/TROUBLESHOOTING.md)
+
+版本和模块边界以 `ONLINE-RELEASE.json` 为准，维护记录见 `docs/DEVLOG.md`。
