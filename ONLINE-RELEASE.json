@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "license": "Apache-2.0",
   "developers": ["Doorham", "XY", "Althy"],
   "update": {

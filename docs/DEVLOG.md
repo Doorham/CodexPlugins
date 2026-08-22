@@ -9,6 +9,13 @@
 
 ## 变更记录
 
+### 2026-08-22 · v0.10.3 · 安装后边界测试修复 · Althy
+
+- 发布边界测试改用 `git ls-files --cached --others --exclude-standard -z` 枚举候选文件。
+- 安装生成且已被 Git 忽略的 `.runtime`、`artifacts` 不再被误判为仓库携带的二进制。
+- 敏感端点扫描同时使用相同的 Git 候选集合，仍覆盖已跟踪文件和未忽略的新文件。
+- 重写仓库首页，将 CodexPlugins 作为独立开源插件库介绍，突出功能、安装、安全与隐私边界。
+
 ### 2026-08-22 · v0.10.2 · Public 开源发布 · Althy
 
 - GitHub 正式更新源确定为公开仓库 `Doorham/CodexPlugins`。

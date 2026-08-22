@@ -1,11 +1,26 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def repository_candidate_paths() -> list[Path]:
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    return sorted(
+        Path(raw_path.decode("utf-8", errors="surrogateescape"))
+        for raw_path in result.stdout.split(b"\0")
+        if raw_path
+    )
 
 
 class OnlineReleaseBoundaryTests(unittest.TestCase):
@@ -27,12 +42,13 @@ class OnlineReleaseBoundaryTests(unittest.TestCase):
             "Y:" + "\\Development\\" + "CodexTools",
         ]
         text_extensions = {".py", ".ps1", ".json", ".md", ".txt", ".js", ".html", ".css", ".vbs", ".cs"}
-        for path in ROOT.rglob("*"):
+        for relative in repository_candidate_paths():
+            path = ROOT / relative
             if not path.is_file() or path.suffix.lower() not in text_extensions:
                 continue
             content = path.read_text(encoding="utf-8", errors="replace")
             for fragment in forbidden_fragments:
-                self.assertNotIn(fragment, content, str(path.relative_to(ROOT)))
+                self.assertNotIn(fragment, content, relative.as_posix())
 
     def test_release_and_plugins_agree(self) -> None:
         release = json.loads((ROOT / "ONLINE-RELEASE.json").read_text(encoding="utf-8"))
@@ -51,9 +67,9 @@ class OnlineReleaseBoundaryTests(unittest.TestCase):
     def test_no_binary_payloads_are_shipped(self) -> None:
         forbidden_suffixes = {".exe", ".dll", ".msi", ".msix", ".zip", ".7z", ".rar", ".pfx", ".pem", ".key"}
         payloads = [
-            path.relative_to(ROOT).as_posix()
-            for path in ROOT.rglob("*")
-            if path.is_file() and path.suffix.lower() in forbidden_suffixes and "artifacts" not in path.parts
+            relative.as_posix()
+            for relative in repository_candidate_paths()
+            if relative.suffix.lower() in forbidden_suffixes
         ]
         self.assertEqual(payloads, [])
 
