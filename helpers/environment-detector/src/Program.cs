@@ -1476,6 +1476,9 @@ namespace EnvironmentDetector
         private readonly EventWaitHandle codexRequest;
         private readonly System.Windows.Forms.Timer requestTimer;
         private bool scanRunning;
+        private bool backgroundOperationRunning;
+        private string backgroundOperationLabel = "";
+        private List<CheckResult> lastAllResults = new List<CheckResult>();
         private List<CheckResult> lastResults = new List<CheckResult>();
 
         public MainForm(bool useCodexMode, EventWaitHandle softwareEvent, EventWaitHandle codexEvent)
@@ -1605,7 +1608,6 @@ namespace EnvironmentDetector
             requestTimer = new System.Windows.Forms.Timer { Interval = 250 };
             requestTimer.Tick += async delegate
             {
-                if (scanRunning) return;
                 bool hasRequest = false;
                 bool requestedCodexMode = codexMode;
                 if (codexRequest.WaitOne(0))
@@ -1665,13 +1667,8 @@ namespace EnvironmentDetector
             try
             {
                 List<CheckResult> allResults = await Task.Run(() => Detector.ScanAll());
-                HashSet<string> manualItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    "开发工具", "基础开发环境", "编辑器集成"
-                };
-                List<CheckResult> results = allResults.Where(item => codexMode != manualItems.Contains(item.Name)).ToList();
-                lastResults = results;
-                RenderResults(results);
+                lastAllResults = allResults;
+                ShowResultsForCurrentMode();
             }
             catch (Exception ex)
             {
@@ -1700,8 +1697,22 @@ namespace EnvironmentDetector
                     : "检查开发工具、基础开发环境与编辑器集成；不会安装大型应用。";
                 repairButton.Visible = codexMode;
                 restoreUtf8Button.Visible = codexMode && Utf8Repair.CanRestore();
-                lastResults = new List<CheckResult>();
-                await RunScan();
+                if (lastAllResults.Count > 0)
+                {
+                    ShowResultsForCurrentMode();
+                    if (backgroundOperationRunning)
+                    {
+                        summary.ForeColor = Color.FromArgb(96, 165, 250);
+                        summary.Text = backgroundOperationLabel + "正在后台继续，可安全查看本页…";
+                    }
+                }
+                else
+                {
+                    lastResults = new List<CheckResult>();
+                    resultsPanel.Controls.Clear();
+                }
+                UpdateRepairButtons();
+                if (!scanRunning && !backgroundOperationRunning) await RunScan();
             }
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Show();
@@ -1713,6 +1724,15 @@ namespace EnvironmentDetector
             repairButton.Visible = codexMode;
             if (codexMode)
             {
+                if (backgroundOperationRunning)
+                {
+                    repairButton.Text = backgroundOperationLabel;
+                    repairButton.BackColor = Color.FromArgb(51, 65, 85);
+                    repairButton.Enabled = false;
+                    restoreUtf8Button.Visible = Utf8Repair.CanRestore();
+                    restoreUtf8Button.Enabled = false;
+                    return;
+                }
                 bool needsRepair = RepairEngine.GetAutomaticItems(lastResults).Count > 0;
                 repairButton.Text = needsRepair ? "一键自动补全" : "已配置齐全";
                 repairButton.BackColor = needsRepair ? Color.FromArgb(22, 163, 74) : Color.FromArgb(51, 65, 85);
@@ -1739,6 +1759,8 @@ namespace EnvironmentDetector
                 return;
 
             scanRunning = true;
+            backgroundOperationRunning = true;
+            backgroundOperationLabel = "正在恢复…";
             refreshButton.Enabled = false;
             copyButton.Enabled = false;
             repairButton.Enabled = false;
@@ -1753,6 +1775,8 @@ namespace EnvironmentDetector
             finally
             {
                 scanRunning = false;
+                backgroundOperationRunning = false;
+                backgroundOperationLabel = "";
             }
             MessageBox.Show(success
                     ? "原编码已恢复。必须重启 Windows 才能完整生效。"
@@ -1777,7 +1801,9 @@ namespace EnvironmentDetector
             if (MessageBox.Show(message, "确认一键自动补全", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            scanRunning = true;
+            List<CheckResult> repairInput = lastResults.ToList();
+            backgroundOperationRunning = true;
+            backgroundOperationLabel = "正在补全…";
             refreshButton.Enabled = false;
             copyButton.Enabled = false;
             repairButton.Enabled = false;
@@ -1785,7 +1811,7 @@ namespace EnvironmentDetector
             summary.Text = "正在自动补全，请不要关闭窗口…";
             try
             {
-                List<RepairResult> results = await Task.Run(() => RepairEngine.Repair(lastResults));
+                List<RepairResult> results = await Task.Run(() => RepairEngine.Repair(repairInput));
                 if (includesUtf8)
                 {
                     bool utf8Success = await Task.Run(() => Utf8Repair.StartElevated());
@@ -1804,9 +1830,20 @@ namespace EnvironmentDetector
             }
             finally
             {
-                scanRunning = false;
+                backgroundOperationRunning = false;
+                backgroundOperationLabel = "";
             }
             await RunScan();
+        }
+
+        private void ShowResultsForCurrentMode()
+        {
+            HashSet<string> manualItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "开发工具", "基础开发环境", "编辑器集成"
+            };
+            lastResults = lastAllResults.Where(item => codexMode != manualItems.Contains(item.Name)).ToList();
+            RenderResults(lastResults);
         }
 
         private void RenderResults(List<CheckResult> results)
@@ -1849,7 +1886,7 @@ namespace EnvironmentDetector
         public static string Build(IEnumerable<CheckResult> results, bool codexMode)
         {
             StringBuilder report = new StringBuilder();
-            report.AppendLine(codexMode ? "Codex 环境补全 v1.0.0" : "软件安装检查 v1.0.0");
+            report.AppendLine(codexMode ? "Codex 环境补全 v1.0.1" : "软件安装检查 v1.0.1");
             report.AppendLine("检测时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine(codexMode
                 ? "范围：可由本工具自行安装或配置的环境"

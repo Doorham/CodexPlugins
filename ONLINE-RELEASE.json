@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "license": "Apache-2.0",
   "developers": ["Doorham", "XY", "Althy"],
   "update": {
@@ -17,8 +17,8 @@
     {"id": "updream-clipboard-cleaner", "version": "1.0.2", "developers": ["Doorham", "XY"]},
     {"id": "codex-answer-chime", "version": "1.0.1", "developers": ["Doorham"]},
     {"id": "arctis-nova-5-battery", "version": "1.0.2", "developers": ["Doorham"]},
-    {"id": "software-environment-checker", "version": "1.0.0", "developers": ["Althy"]},
-    {"id": "codex-environment-helper", "version": "1.0.0", "developers": ["Althy"]}
+    {"id": "software-environment-checker", "version": "1.0.1", "developers": ["Althy"]},
+    {"id": "codex-environment-helper", "version": "1.0.1", "developers": ["Althy"]}
   ],
   "excludedFeatures": [
     "codex-network-drive-access",

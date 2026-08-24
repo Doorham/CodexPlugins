@@ -27,8 +27,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
         software = json.loads(SOFTWARE_MANIFEST.read_text(encoding="utf-8"))
         codex = json.loads(CODEX_MANIFEST.read_text(encoding="utf-8"))
 
-        self.assertEqual(software["moduleVersion"], "1.0.0")
-        self.assertEqual(codex["moduleVersion"], "1.0.0")
+        self.assertEqual(software["moduleVersion"], "1.0.1")
+        self.assertEqual(codex["moduleVersion"], "1.0.1")
         self.assertEqual(software["executable"], codex["executable"])
         self.assertEqual(software["installSource"], codex["installSource"])
         self.assertEqual(software["processName"], "EnvironmentDetector.exe")
@@ -38,8 +38,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
     def test_release_index_lists_both_public_modules(self) -> None:
         release = json.loads((ROOT / "ONLINE-RELEASE.json").read_text(encoding="utf-8"))
         versions = {item["id"]: item["version"] for item in release["modules"]}
-        self.assertEqual(versions["software-environment-checker"], "1.0.0")
-        self.assertEqual(versions["codex-environment-helper"], "1.0.0")
+        self.assertEqual(versions["software-environment-checker"], "1.0.1")
+        self.assertEqual(versions["codex-environment-helper"], "1.0.1")
 
     def test_process_handler_passes_reviewed_start_arguments_without_shell(self) -> None:
         service = object.__new__(ControlService)
@@ -74,6 +74,17 @@ class EnvironmentDetectorTests(unittest.TestCase):
         self.assertGreaterEqual(source.count("WriteSnapshot(original)"), 2)
         self.assertIn("RunFileFormatSelfTest", source)
 
+    def test_window_can_switch_pages_without_interrupting_background_completion(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("private bool backgroundOperationRunning;", source)
+        self.assertIn("private List<CheckResult> lastAllResults", source)
+        self.assertIn("List<CheckResult> repairInput = lastResults.ToList();", source)
+        self.assertIn("RepairEngine.Repair(repairInput)", source)
+        self.assertIn("正在后台继续，可安全查看本页", source)
+        timer_start = source.index("requestTimer.Tick += async delegate")
+        timer_end = source.index("Shown += async delegate", timer_start)
+        self.assertNotIn("if (scanRunning) return", source[timer_start:timer_end])
+
     def test_online_updater_atomically_deploys_the_single_helper(self) -> None:
         updater = (ROOT / "scripts" / "update-from-origin.ps1").read_text(encoding="utf-8")
         self.assertIn(
@@ -106,8 +117,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
             self.assertIn("WINGET_MISSING=PASS", scenario_text)
             self.assertIn("UTF8_BACKUP_FORMAT=PASS", scenario_text)
             self.assertIn("SYSTEM_CHANGES=0", scenario_text)
-            self.assertIn("软件安装检查 v1.0.0", software_report.read_text(encoding="utf-8"))
-            self.assertIn("Codex 环境补全 v1.0.0", codex_report.read_text(encoding="utf-8"))
+            self.assertIn("软件安装检查 v1.0.1", software_report.read_text(encoding="utf-8"))
+            self.assertIn("Codex 环境补全 v1.0.1", codex_report.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

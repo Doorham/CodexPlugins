@@ -64,7 +64,7 @@
 
 - **软件安装检查**：只读检查开发工具、Python 3.11+ 的真实运行能力，以及 VS Code、Visual Studio、Cursor 或 PyCharm 与 Python 的集成情况。它不会替用户安装大型编辑器、Python 或 Visual Studio 工作负载。
 - **Codex 环境补全**：检查 PowerShell 7、Windows Terminal、Git、FFmpeg/FFprobe、PyYAML、yt-dlp 和 UTF-8。能够明确处理的缺项会在用户确认后补全；复杂的权限、代理、企业策略、Python 或 PATH 异常会显示详情，交由用户或 Codex 继续判断。
-- 两张卡片共用一个本地助手。再次点击时会复用现有窗口并切换页面，不会不断打开副窗口。
+- 两张卡片共用一个本地助手。再次点击时会复用现有窗口并切换页面，不会不断打开副窗口；环境补全运行期间也能切到软件检查页，后台任务不会被取消或重启。
 - UTF-8 修改或恢复前都会保存代码页快照；操作需要管理员确认，完成后必须重启 Windows 才能让系统范围设置完全生效。
 
 ## 本地数据位置
