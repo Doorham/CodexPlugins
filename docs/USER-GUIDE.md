@@ -8,7 +8,7 @@
 - **检查更新**：从 GitHub `origin/main` 检查并安全快进更新。
 - **公共插件**：显示网络版内置功能。
 - **私人页面**：显示当前电脑的本地私人插件；这些内容不上传 GitHub。
-- **分类筛选**：按系统、网络、剪贴板、硬件或 Agent 联动等类别筛选卡片。
+- **分类筛选**：按系统、网络、剪贴板、开发环境、硬件或 Agent 联动等类别筛选卡片。
 - **刷新按钮**：只重新读取本机状态，不修改配置。
 
 ## 开启和停用后台功能
@@ -60,6 +60,13 @@
 
 详细安全机制和命令行方式见 [UPDATING.md](UPDATING.md)。
 
+## 开发环境检查与补全
+
+- **软件安装检查**：只读检查开发工具、Python 3.11+ 的真实运行能力，以及 VS Code、Visual Studio、Cursor 或 PyCharm 与 Python 的集成情况。它不会替用户安装大型编辑器、Python 或 Visual Studio 工作负载。
+- **Codex 环境补全**：检查 PowerShell 7、Windows Terminal、Git、FFmpeg/FFprobe、PyYAML、yt-dlp 和 UTF-8。能够明确处理的缺项会在用户确认后补全；复杂的权限、代理、企业策略、Python 或 PATH 异常会显示详情，交由用户或 Codex 继续判断。
+- 两张卡片共用一个本地助手。再次点击时会复用现有窗口并切换页面，不会不断打开副窗口。
+- UTF-8 修改或恢复前都会保存代码页快照；操作需要管理员确认，完成后必须重启 Windows 才能让系统范围设置完全生效。
+
 ## 本地数据位置
 
 | 数据 | 默认位置 | 是否上传 GitHub |
@@ -70,5 +77,6 @@
 | 自定义直连白名单 | `%LOCALAPPDATA%\CompanyAIHelpers\ProxyOverrideBypass` | 否 |
 | Codex 系统代理备份 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexSystemProxy` | 否 |
 | 提示音与本地设置 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | 否 |
+| 环境检查备份与本地状态 | `%LOCALAPPDATA%\CompanyAIHelpers\EnvironmentDetector` | 否 |
 
 详细隐私规则见 [SECURITY-PRIVACY.md](SECURITY-PRIVACY.md)。

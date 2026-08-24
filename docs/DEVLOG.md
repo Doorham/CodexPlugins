@@ -9,6 +9,14 @@
 
 ## 变更记录
 
+### 2026-08-24 · v0.11.0 · 开发环境检查与补全 · Althy
+
+- 新增“软件安装检查”v1.0.0，只读验证开发工具、Python 真实能力与编辑器集成。
+- 新增“Codex 环境补全”v1.0.0，检查并按用户确认补全 PowerShell 7、Windows Terminal、Git、FFmpeg、PyYAML、yt-dlp 与 UTF-8。
+- 两个模块共用一个从源码构建的 `EnvironmentDetector.exe`，通过受校验参数进入不同页面，同一时间只保留一个窗口实例。
+- UTF-8 修改与恢复均保存代码页快照、失败回滚并明确要求重启；公开版不包含 DirectX 或 DLL 修复。
+- 新增非破坏性异常矩阵、双报告、清单一致性、参数启动与 GitHub 发布边界测试。
+
 ### 2026-08-22 · v0.10.3 · 安装后边界测试修复 · Althy
 
 - 发布边界测试改用 `git ls-files --cached --others --exclude-standard -z` 枚举候选文件。

@@ -47,6 +47,7 @@ Set-Location C:\Works\CodexPlugins
 - Codex Answer Chime
 - Arctis Nova 5 Battery Monitor
 - Arctis Nova 5 Startup Gate
+- Environment Detector（“软件安装检查”和“Codex 环境补全”共用）
 - Clipboard Verification
 
 ## 5. 创建桌面快捷方式
@@ -70,3 +71,4 @@ Set-Location C:\Works\CodexPlugins
 3. 页面中不存在“Codex 网络盘访问”或 Logitech G435 卡片。
 4. 右上角“检查更新”使用 GitHub `origin/main`。
 5. 用到的后台功能可点击“点我开启”，并在重启 Windows 后确认自启状态。
+6. “软件安装检查”和“Codex 环境补全”能分别打开，且同一时间只保留一个工具副窗口。

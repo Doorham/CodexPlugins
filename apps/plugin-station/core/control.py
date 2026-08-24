@@ -131,6 +131,12 @@ class ControlService:
             status_file = expand_path(str(data["statusFile"])).resolve()
             if os.path.commonpath([str(status_file), str(executable.parent)]) != str(executable.parent):
                 raise ValueError(f"Plugin statusFile must stay beside its executable in {manifest_path}")
+        start_arguments = data.get("startArguments", [])
+        if not isinstance(start_arguments, list) or not all(
+            isinstance(value, str) and value and len(value) <= 256 and "\n" not in value and "\r" not in value
+            for value in start_arguments
+        ):
+            raise ValueError(f"Invalid startArguments in {manifest_path}")
         if data.get("bundle"):
             raise ValueError(f"External binary bundles are not supported in the online edition: {manifest_path}")
         if scope == "private":
@@ -182,7 +188,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.10.3",
+                "version": "0.11.0",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -443,7 +449,7 @@ class ControlService:
             time.sleep(0.35)
         if action in {"start", "restart"}:
             subprocess.Popen(
-                [str(exe)],
+                [str(exe), *plugin.get("startArguments", [])],
                 cwd=str(exe.parent),
                 creationflags=CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
                 close_fds=True,

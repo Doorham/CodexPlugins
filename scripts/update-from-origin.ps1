@@ -180,6 +180,7 @@ try {
         if (Install-BuiltHelper 'CodexAnswerChime.exe' 'CodexAnswerChime' 'CodexAnswerChime' $remoteHead) { $helpersUpdated += 'CodexAnswerChime' }
         if (Install-BuiltHelper 'ArctisNova5BatteryMonitor.exe' 'ArctisNova5BatteryMonitor' 'ArctisNova5BatteryMonitor' $remoteHead) { $helpersUpdated += 'ArctisNova5BatteryMonitor' }
         Install-BuiltHelper 'ArctisNova5StartupGate.exe' 'ArctisNova5BatteryMonitor' '' $remoteHead | Out-Null
+        if (Install-BuiltHelper 'EnvironmentDetector.exe' 'EnvironmentDetector' 'EnvironmentDetector' $remoteHead) { $helpersUpdated += 'EnvironmentDetector' }
     }
 
     $codexSystemProxyResult = $null

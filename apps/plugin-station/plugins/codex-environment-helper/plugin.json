@@ -1,0 +1,29 @@
+{
+  "id": "codex-environment-helper",
+  "name": "Codex 环境补全",
+  "moduleVersion": "1.0.0",
+  "developers": ["Althy"],
+  "description": "检测并自助补全 PowerShell、Terminal、Git、FFmpeg 与常用 Python 依赖；UTF-8 修改前自动备份、失败回滚并可恢复原编码。",
+  "category": "开发环境",
+  "icon": "+",
+  "accent": "#3b82f6",
+  "mode": "tool",
+  "handler": "process_app",
+  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\EnvironmentDetector\\EnvironmentDetector.exe",
+  "processName": "EnvironmentDetector.exe",
+  "installSource": "artifacts/helpers/EnvironmentDetector.exe",
+  "startArguments": ["--mode", "codex"],
+  "actions": ["start"],
+  "uiActions": [
+    {"id": "start", "label": "打开自助环境补全", "kind": "primary"}
+  ],
+  "agentAccess": {"enabled": true, "actions": ["start"]},
+  "localDataPolicy": {
+    "scope": "local-private",
+    "paths": ["%LOCALAPPDATA%\\CompanyAIHelpers\\EnvironmentDetector"],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true,
+    "containsCredentials": false
+  }
+}

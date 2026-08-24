@@ -32,6 +32,7 @@ CodexPlugins 是公开可审计的开源项目。Public 意味着任何人都可
 | 直连自定义项 | `%LOCALAPPDATA%\CompanyAIHelpers\ProxyOverrideBypass` | 用户自定义域名与备份 |
 | Codex 代理备份 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexSystemProxy` | 修改前的本机备份 |
 | 回答提示音 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | 自定义音频与设置 |
+| 环境检查器 | `%LOCALAPPDATA%\CompanyAIHelpers\EnvironmentDetector` | UTF-8 代码页快照与本地恢复资料 |
 | Python 环境 | 仓库内 `.runtime` | 本地依赖环境 |
 | 助手构建产物 | 仓库内 `artifacts` | 当前电脑编译出的程序 |
 
@@ -53,6 +54,7 @@ CodexPlugins 是公开可审计的开源项目。Public 意味着任何人都可
 - 代理相关功能不关闭、不切换 VPN、Clash Verge、Aurora 或 Codex，也不读取节点和订阅。
 - 剪贴板助手只在确认 Updream 画布格式时处理图像表示，不上传或保存剪贴板历史。
 - 回答提示音不记录对话正文。
+- 软件安装检查只读取开发工具与集成状态；环境补全只在用户确认后处理清单内项目。UTF-8 修改前备份并支持恢复，不包含 DirectX 或 DLL 修复。
 - 私人插件仅允许受限的本机进程型清单，不能把任意命令伪装成插件动作。
 
 ## 提交前检查清单

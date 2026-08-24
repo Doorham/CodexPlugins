@@ -1,0 +1,29 @@
+{
+  "id": "software-environment-checker",
+  "name": "软件安装检查",
+  "moduleVersion": "1.0.0",
+  "developers": ["Althy"],
+  "description": "检查开发工具、Python 基础开发环境和编辑器集成；支持验证 VS Code、Visual Studio、Cursor 与 PyCharm 路线。只读检测。",
+  "category": "开发环境",
+  "icon": "✓",
+  "accent": "#22c55e",
+  "mode": "tool",
+  "handler": "process_app",
+  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\EnvironmentDetector\\EnvironmentDetector.exe",
+  "processName": "EnvironmentDetector.exe",
+  "installSource": "artifacts/helpers/EnvironmentDetector.exe",
+  "startArguments": ["--mode", "software"],
+  "actions": ["start"],
+  "uiActions": [
+    {"id": "start", "label": "检查软件与集成", "kind": "primary"}
+  ],
+  "agentAccess": {"enabled": true, "actions": ["start"]},
+  "localDataPolicy": {
+    "scope": "local-private",
+    "paths": ["%LOCALAPPDATA%\\CompanyAIHelpers\\EnvironmentDetector"],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true,
+    "containsCredentials": false
+  }
+}
