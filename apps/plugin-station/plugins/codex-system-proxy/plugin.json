@@ -1,9 +1,9 @@
 {
   "id": "codex-system-proxy",
   "name": "Codex 对话 timeout 修复",
-  "moduleVersion": "1.0.1",
+  "moduleVersion": "1.1.0",
   "developers": ["Althy"],
-  "description": "修复新对话或久置对话固定 timeout 5 次：让 Codex 的 WebSocket 从第一次连接开始遵循 Windows 系统代理。不会关闭 VPN，也不读取节点、账号或对话。",
+  "description": "修复 Codex 未遵循 Windows 系统代理这一类 timeout，并独立检测 WebSocket。已配置时不再重复显示修复按钮；代理线路异常需要单独排查。",
   "category": "系统",
   "icon": "↗",
   "accent": "#22c55e",
@@ -20,8 +20,8 @@
   },
   "actions": ["refresh", "repair"],
   "uiActions": [
-    {"id": "repair", "label": "修复连接", "kind": "primary"},
-    {"id": "refresh", "label": "检测 WebSocket", "kind": "secondary"}
+    {"id": "repair", "label": "配置系统代理", "kind": "primary"},
+    {"id": "refresh", "label": "检测连接", "kind": "secondary"}
   ],
   "agentAccess": {"enabled": true, "actions": ["refresh"]}
 }

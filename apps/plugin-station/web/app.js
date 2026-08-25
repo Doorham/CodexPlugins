@@ -41,9 +41,11 @@ function card(plugin) {
     const key = `${plugin.id}:${action.id}`;
     const toggle = action.kind === 'toggle';
     const label = toggle ? (plugin.enabled ? '点我停用' : '点我开启') : action.label;
-    const kind = toggle ? `toggle ${plugin.enabled ? 'enabled' : 'disabled'}` : action.kind;
+    const statusDisabled = Boolean(action.disabled);
+    const kind = `${toggle ? `toggle ${plugin.enabled ? 'enabled' : 'disabled'}` : action.kind}${statusDisabled ? ' status-disabled' : ''}`;
+    const disabled = statusDisabled || state.busy.has(key);
     return `<button class="action ${escapeHtml(kind)}" data-plugin="${escapeHtml(plugin.id)}" data-action="${escapeHtml(action.id)}"
-      data-dialog="${escapeHtml(action.dialog || '')}" ${state.busy.has(key) ? 'disabled' : ''}>${escapeHtml(label)}</button>`;
+      data-dialog="${escapeHtml(action.dialog || '')}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>`;
   }).join('');
   const metric = plugin.metric ? `<div class="card-metric ${escapeHtml(plugin.metric.state)}">
     <strong>${escapeHtml(plugin.metric.value)}</strong><span>${escapeHtml(plugin.metric.label)}</span>

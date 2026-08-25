@@ -89,6 +89,7 @@ button { font: inherit; }
 .action.toggle.disabled { border-color: var(--accent); color: #0b0d12; background: var(--accent); }
 .action.danger { color: #fda4af; }
 .action:disabled { opacity: .45; cursor: wait; }
+.action.status-disabled:disabled { opacity: .72; cursor: default; }
 .agent-badge { position: absolute; right: 22px; top: 78px; color: #646c7b; font: 700 9px/1 Consolas, monospace; letter-spacing: .08em; }
 .skeleton { height: 278px; border-radius: 20px; background: linear-gradient(110deg, #151820 8%, #1e222c 18%, #151820 33%); background-size: 200% 100%; animation: shine 1.5s linear infinite; }
 .toast { position: fixed; left: 50%; bottom: 28px; z-index: 5; transform: translate(-50%, 20px); opacity: 0; padding: 11px 16px; border: 1px solid var(--line); border-radius: 12px; background: #20242d; box-shadow: 0 15px 50px rgba(0,0,0,.4); color: white; font-size: 12px; pointer-events: none; transition: .25s; }

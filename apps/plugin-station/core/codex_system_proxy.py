@@ -240,5 +240,5 @@ def diagnose_websocket(
         "summary": check.get("summary", ""),
         "handshake": details.get("handshake result"),
         "durationMs": check.get("durationMs"),
-        "message": "WebSocket 已通过系统代理连接（HTTP 101）" if ok else "WebSocket 仍未连接成功",
+        "message": "WebSocket 握手成功（HTTP 101）" if ok else "WebSocket 仍未连接成功",
     }

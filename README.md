@@ -6,7 +6,7 @@
 
 | 插件 | 解决的问题 | 主要特点 |
 | --- | --- | --- |
-| Codex 对话 timeout 修复 | Codex 首次建立 Responses WebSocket 时未正确使用 Windows 系统代理 | 幂等修正配置、修改前备份、提供握手诊断，不读取对话正文 |
+| Codex 对话 timeout 修复 | Codex 首次建立 Responses WebSocket 时未正确使用 Windows 系统代理 | 仅在缺少配置时修正，已配置后独立检测握手，不把线路异常误报为配置问题 |
 | 国内网站直连 | 开启系统代理后，常用国内网站出现不必要的绕路 | 管理 Windows 直连规则，可与 Clash Verge Rev 的绕过项安全同步 |
 | Updream 剪贴板清理 | 从 Updream 画布复制的图片难以粘贴到部分 Windows 应用 | 保留原始 PNG，只补充兼容的剪贴板图像格式，不保存剪贴板历史 |
 | Codex 完成提示音 | 后台等待 Codex 工作时容易错过完成时机 | 支持自定义 WAV、MP3、WMA，失败时回退到系统提示音 |

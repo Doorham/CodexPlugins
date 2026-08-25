@@ -20,6 +20,7 @@ from core.codex_system_proxy import (  # noqa: E402
     ensure_system_proxy_feature,
     find_codex_cli,
 )
+from core.control import ControlService  # noqa: E402
 
 
 MANIFEST_PATH = APP_ROOT / "plugins" / "codex-system-proxy" / "plugin.json"
@@ -34,8 +35,8 @@ class CodexSystemProxyTests(unittest.TestCase):
     def test_online_manifest_and_release_agree(self) -> None:
         release = json.loads(RELEASE_PATH.read_text(encoding="utf-8"))
         module = next(item for item in release["modules"] if item["id"] == self.plugin["id"])
-        self.assertEqual(release["version"], "0.11.1")
-        self.assertEqual(self.plugin["moduleVersion"], "1.0.1")
+        self.assertEqual(release["version"], "0.11.2")
+        self.assertEqual(self.plugin["moduleVersion"], "1.1.0")
         self.assertEqual(self.plugin["name"], "Codex 对话 timeout 修复")
         self.assertEqual(self.plugin["developers"], ["Althy"])
         self.assertEqual(module["version"], self.plugin["moduleVersion"])
@@ -124,7 +125,56 @@ class CodexSystemProxyTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["handshake"], "HTTP 101 Switching Protocols")
         self.assertEqual(result["durationMs"], 1978)
+        self.assertEqual(result["message"], "WebSocket 握手成功（HTTP 101）")
         self.assertNotIn("secret", json.dumps(result))
+
+    def _plugin_status(self, *, configured: bool, proxy_enabled: bool = True, diagnostic=None):
+        service = ControlService.__new__(ControlService)
+        service._codex_proxy_diagnostic = diagnostic
+        config = {
+            "configured": configured,
+            "conflict": False,
+            "message": "Codex 已遵循 Windows 系统代理" if configured else "Codex 尚未遵循 Windows 系统代理",
+        }
+        system_proxy = {
+            "enabled": proxy_enabled,
+            "message": "系统代理已开启" if proxy_enabled else "系统代理未开启",
+        }
+        with mock.patch("core.control.codex_proxy_config_status", return_value=config), mock.patch(
+            "core.control.windows_system_proxy_status", return_value=system_proxy
+        ):
+            return service._codex_proxy_status({})
+
+    def test_unconfigured_state_only_offers_configuration(self) -> None:
+        status = self._plugin_status(configured=False)
+        self.assertEqual(status["statusText"], "待配置")
+        self.assertFalse(status["running"])
+        self.assertEqual(status["actions"], [{"id": "repair", "label": "配置系统代理", "kind": "primary"}])
+
+    def test_configured_state_disables_repair_and_keeps_diagnostic(self) -> None:
+        status = self._plugin_status(configured=True)
+        self.assertEqual(status["statusText"], "已配置")
+        self.assertTrue(status["running"])
+        self.assertEqual([item["label"] for item in status["actions"]], ["已配置", "检测连接"])
+        self.assertTrue(status["actions"][0]["disabled"])
+
+    def test_failed_diagnostic_is_not_presented_as_missing_configuration(self) -> None:
+        status = self._plugin_status(
+            configured=True,
+            diagnostic={"ok": False, "message": "WebSocket 仍未连接成功"},
+        )
+        self.assertEqual(status["statusText"], "连接检测失败")
+        self.assertFalse(status["running"])
+        self.assertEqual(status["actions"][0]["label"], "已配置")
+
+    def test_system_proxy_off_is_visible_even_when_codex_is_configured(self) -> None:
+        status = self._plugin_status(configured=True, proxy_enabled=False)
+        self.assertEqual(status["statusText"], "已配置 · 系统代理未开启")
+        self.assertFalse(status["running"])
+
+    def test_web_ui_honors_disabled_status_actions(self) -> None:
+        app_js = (APP_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("Boolean(action.disabled)", app_js)
 
     def test_local_codex_runtime_precedes_windowsapps_path(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
