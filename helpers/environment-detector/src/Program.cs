@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -917,17 +919,19 @@ namespace EnvironmentDetector
             return names.Where(name => WingetPackages.ContainsKey(name) || name == "PyYAML" || name == "yt-dlp" || name == "UTF-8 全球语言支持").ToList();
         }
 
-        public static List<RepairResult> Repair(IEnumerable<CheckResult> results)
+        public static List<RepairResult> Repair(IEnumerable<CheckResult> results, Action<string, int, int> progress)
         {
             List<RepairResult> repaired = new List<RepairResult>();
             List<string> targets = GetAutomaticItems(results);
             string winget = Detector.FindIndependentExecutable("winget.exe");
             PythonProbe python = Detector.GetPythonForRepair();
 
-            foreach (string name in targets)
+            for (int index = 0; index < targets.Count; index++)
             {
+                string name = targets[index];
                 if (name == "UTF-8 全球语言支持")
                     continue;
+                if (progress != null) progress(name, index + 1, targets.Count);
                 RepairResult prerequisiteFailure = GetPrerequisiteFailure(name, winget, python);
                 if (prerequisiteFailure != null)
                 {
@@ -1458,6 +1462,170 @@ namespace EnvironmentDetector
         }
     }
 
+    internal sealed class MoonPhaseIndicator : Control
+    {
+        private int phaseIndex;
+        private readonly Image[] phaseImages;
+        private static readonly string[] ResourceNames =
+        {
+            "EnvironmentDetector.Moon01Full.png",
+            "EnvironmentDetector.Moon02WaningGibbous.png",
+            "EnvironmentDetector.Moon03LastQuarter.png",
+            "EnvironmentDetector.Moon04WaningCrescent.png",
+            "EnvironmentDetector.Moon05New.png",
+            "EnvironmentDetector.Moon06WaxingCrescent.png",
+            "EnvironmentDetector.Moon07FirstQuarter.png",
+            "EnvironmentDetector.Moon08WaxingGibbous.png"
+        };
+
+        public MoonPhaseIndicator()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint, true);
+            BackColor = Color.Transparent;
+            Size = new Size(54, 54);
+            phaseImages = ResourceNames.Select(LoadEmbeddedImage).ToArray();
+        }
+
+        public int PhaseIndex
+        {
+            get { return phaseIndex; }
+            set
+            {
+                int normalized = ((value % 8) + 8) % 8;
+                if (phaseIndex == normalized) return;
+                phaseIndex = normalized;
+                Invalidate();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            int side = Math.Max(1, Math.Min(Width, Height) - 4);
+            Rectangle target = new Rectangle((Width - side) / 2, (Height - side) / 2, side, side);
+            Image image = phaseImages[phaseIndex];
+            using (ImageAttributes attributes = new ImageAttributes())
+            {
+                attributes.SetWrapMode(WrapMode.TileFlipXY);
+                e.Graphics.DrawImage(image, target, 0, 0, image.Width, image.Height,
+                    GraphicsUnit.Pixel, attributes);
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && phaseImages != null)
+                foreach (Image image in phaseImages) image.Dispose();
+            base.Dispose(disposing);
+        }
+
+        private static Image LoadEmbeddedImage(string resourceName)
+        {
+            using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
+            {
+                if (stream == null) throw new InvalidOperationException("Missing embedded moon asset: " + resourceName);
+                using (Image source = Image.FromStream(stream))
+                {
+                    Bitmap premultiplied = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppPArgb);
+                    using (Graphics graphics = Graphics.FromImage(premultiplied))
+                    {
+                        graphics.CompositingMode = CompositingMode.SourceCopy;
+                        graphics.DrawImage(source, new Rectangle(0, 0, source.Width, source.Height),
+                            0, 0, source.Width, source.Height, GraphicsUnit.Pixel);
+                    }
+                    return premultiplied;
+                }
+            }
+        }
+    }
+
+    internal sealed class BusyStatusCard : Panel
+    {
+        public BusyStatusCard()
+        {
+            BackColor = Color.FromArgb(19, 27, 42);
+            DoubleBuffered = true;
+            Height = 106;
+            Padding = new Padding(0);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (Width <= 0 || Height <= 0) return;
+            using (GraphicsPath path = ModernUi.RoundedRectangle(new Rectangle(0, 0, Width, Height), 14))
+                Region = new Region(path);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath path = ModernUi.RoundedRectangle(new Rectangle(0, 0, Width - 1, Height - 1), 14))
+            using (Pen pen = new Pen(Color.FromArgb(59, 130, 246)))
+                e.Graphics.DrawPath(pen, path);
+        }
+    }
+
+    internal sealed class BusyWarningDialog : Form
+    {
+        public BusyWarningDialog(bool closing)
+        {
+            Text = "环境配置正在安装";
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            ControlBox = false;
+            ShowInTaskbar = false;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(510, 236);
+            BackColor = Color.FromArgb(13, 18, 29);
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+
+            MoonPhaseIndicator moon = new MoonPhaseIndicator
+            {
+                PhaseIndex = 0,
+                Size = new Size(54, 54),
+                Location = new Point(27, 24)
+            };
+            Label title = new Label
+            {
+                Text = "正在安装，先不要" + (closing ? "关闭" : "切换") + "窗口",
+                ForeColor = Color.FromArgb(248, 250, 252),
+                Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(96, 32)
+            };
+            Label detail = new Label
+            {
+                Text = closing
+                    ? "环境补全仍在进行。请等待完成后再关闭窗口，当前任务不会被中断。"
+                    : "环境补全仍在进行。请等待完成后再切换模块，当前任务不会被中断。",
+                ForeColor = Color.FromArgb(180, 190, 207),
+                Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Regular),
+                Location = new Point(32, 96),
+                Size = new Size(446, 50)
+            };
+            ModernButton waitButton = new ModernButton("继续等待", Color.FromArgb(37, 99, 235))
+            {
+                Width = 126,
+                Left = 352,
+                Top = 166,
+                DialogResult = DialogResult.OK
+            };
+            AcceptButton = waitButton;
+            Controls.Add(moon);
+            Controls.Add(title);
+            Controls.Add(detail);
+            Controls.Add(waitButton);
+        }
+    }
+
     internal sealed class MainForm : Form
     {
         [DllImport("dwmapi.dll")]
@@ -1472,20 +1640,37 @@ namespace EnvironmentDetector
         private readonly ModernButton copyButton;
         private readonly ModernButton repairButton;
         private readonly ModernButton restoreUtf8Button;
+        private readonly BusyStatusCard busyStatusCard;
+        private readonly MoonPhaseIndicator busyMoon;
+        private readonly Label busyTitle;
+        private readonly Label busyItem;
+        private readonly Label busyProgress;
         private readonly EventWaitHandle softwareRequest;
         private readonly EventWaitHandle codexRequest;
+        private readonly bool installationPreviewMode;
         private readonly System.Windows.Forms.Timer requestTimer;
+        private readonly System.Windows.Forms.Timer busyAnimationTimer;
         private bool scanRunning;
         private bool backgroundOperationRunning;
+        private bool busyPresentationRunning;
+        private bool busyWarningOpen;
+        private int moonPhaseIndex;
+        private DateTime backgroundOperationStartedAt;
         private string backgroundOperationLabel = "";
+        private string backgroundOperationItem = "正在准备…";
+        private string busyIdleStatus = "准备中";
+        private int backgroundOperationPosition;
+        private int backgroundOperationTotal;
         private List<CheckResult> lastAllResults = new List<CheckResult>();
         private List<CheckResult> lastResults = new List<CheckResult>();
+        private const int MoonPhaseCount = 8;
 
-        public MainForm(bool useCodexMode, EventWaitHandle softwareEvent, EventWaitHandle codexEvent)
+        public MainForm(bool useCodexMode, EventWaitHandle softwareEvent, EventWaitHandle codexEvent, bool previewInstallation)
         {
             codexMode = useCodexMode;
             softwareRequest = softwareEvent;
             codexRequest = codexEvent;
+            installationPreviewMode = previewInstallation;
             string moduleName = codexMode ? "Codex 环境补全" : "软件安装检查";
             Text = moduleName + " · Codex 工具箱";
             StartPosition = FormStartPosition.CenterScreen;
@@ -1545,6 +1730,53 @@ namespace EnvironmentDetector
             };
             resultsPanel.Resize += delegate { ResizeResultCards(); };
 
+            busyStatusCard = new BusyStatusCard
+            {
+                Dock = DockStyle.Top,
+                Visible = false,
+                Margin = new Padding(0, 0, 0, 12)
+            };
+            busyMoon = new MoonPhaseIndicator
+            {
+                PhaseIndex = 0,
+                Size = new Size(56, 56),
+                Location = new Point(20, 23),
+                BackColor = Color.Transparent
+            };
+            busyTitle = new Label
+            {
+                Text = "正在补全运行环境",
+                ForeColor = Color.FromArgb(248, 250, 252),
+                Font = new Font(Font.FontFamily, 12F, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(91, 17),
+                BackColor = Color.Transparent
+            };
+            busyItem = new Label
+            {
+                Text = "当前项目：正在准备…",
+                ForeColor = Color.FromArgb(191, 201, 216),
+                Font = new Font(Font.FontFamily, 9F, FontStyle.Regular),
+                AutoEllipsis = true,
+                Location = new Point(92, 49),
+                Size = new Size(520, 24),
+                BackColor = Color.Transparent
+            };
+            busyProgress = new Label
+            {
+                Text = "处理进度：准备中 · 已用时间：00:00",
+                ForeColor = Color.FromArgb(96, 165, 250),
+                Font = new Font(Font.FontFamily, 8.5F, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(92, 75),
+                BackColor = Color.Transparent
+            };
+            busyStatusCard.Controls.Add(busyMoon);
+            busyStatusCard.Controls.Add(busyTitle);
+            busyStatusCard.Controls.Add(busyItem);
+            busyStatusCard.Controls.Add(busyProgress);
+            busyStatusCard.Resize += delegate { busyItem.Width = Math.Max(300, busyStatusCard.ClientSize.Width - busyItem.Left - 24); };
+
             Panel sectionHeader = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = Color.FromArgb(10, 14, 22) };
             Label sectionTitle = new Label
             {
@@ -1566,8 +1798,11 @@ namespace EnvironmentDetector
             sectionHeader.Controls.Add(sectionHint);
             sectionHeader.Resize += delegate { sectionHint.Left = sectionHeader.ClientSize.Width - sectionHint.Width; };
 
+            Panel resultsHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(10, 14, 22) };
+            resultsHost.Controls.Add(resultsPanel);
+            resultsHost.Controls.Add(busyStatusCard);
             Panel content = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(10, 14, 22), Padding = new Padding(28, 6, 28, 8) };
-            content.Controls.Add(resultsPanel);
+            content.Controls.Add(resultsHost);
             content.Controls.Add(sectionHeader);
 
             Panel footer = new Panel { Dock = DockStyle.Bottom, Height = 86, BackColor = Color.FromArgb(13, 18, 29) };
@@ -1620,12 +1855,23 @@ namespace EnvironmentDetector
                     hasRequest = true;
                     requestedCodexMode = false;
                 }
-                if (hasRequest) await SwitchMode(requestedCodexMode);
+                if (hasRequest)
+                {
+                    if (backgroundOperationRunning && requestedCodexMode != codexMode)
+                        ShowBusyWarning(false);
+                    else
+                        await SwitchMode(requestedCodexMode);
+                }
             };
+            busyAnimationTimer = new System.Windows.Forms.Timer { Interval = 280 };
+            busyAnimationTimer.Tick += delegate { AdvanceBusyAnimation(); };
             Shown += async delegate
             {
                 requestTimer.Start();
-                await RunScan();
+                if (installationPreviewMode)
+                    await RunInstallationPreview();
+                else
+                    await RunScan();
             };
         }
 
@@ -1633,7 +1879,20 @@ namespace EnvironmentDetector
         {
             requestTimer.Stop();
             requestTimer.Dispose();
+            busyAnimationTimer.Stop();
+            busyAnimationTimer.Dispose();
             base.OnFormClosed(e);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing && backgroundOperationRunning)
+            {
+                e.Cancel = true;
+                ShowBusyWarning(true);
+                return;
+            }
+            base.OnFormClosing(e);
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -1664,6 +1923,8 @@ namespace EnvironmentDetector
             summary.ForeColor = Color.FromArgb(96, 165, 250);
             summary.Text = codexMode ? "正在检测 7 项可补全环境…" : "正在检测 3 项软件与集成环境…";
             resultsPanel.Controls.Clear();
+            StartBusyPresentation(codexMode ? "正在检测可补全环境" : "正在检查软件与集成", 0, "检测中");
+            SetBusyProgress(codexMode ? "检查 7 项可补全环境" : "检查 3 项软件与集成环境", 0, 0);
             try
             {
                 List<CheckResult> allResults = await Task.Run(() => Detector.ScanAll());
@@ -1677,6 +1938,7 @@ namespace EnvironmentDetector
             }
             finally
             {
+                StopBusyPresentation();
                 refreshButton.Enabled = true;
                 copyButton.Enabled = lastResults.Count > 0;
                 scanRunning = false;
@@ -1686,6 +1948,11 @@ namespace EnvironmentDetector
 
         private async Task SwitchMode(bool useCodexMode)
         {
+            if (backgroundOperationRunning && codexMode != useCodexMode)
+            {
+                ShowBusyWarning(false);
+                return;
+            }
             if (codexMode != useCodexMode)
             {
                 codexMode = useCodexMode;
@@ -1700,11 +1967,6 @@ namespace EnvironmentDetector
                 if (lastAllResults.Count > 0)
                 {
                     ShowResultsForCurrentMode();
-                    if (backgroundOperationRunning)
-                    {
-                        summary.ForeColor = Color.FromArgb(96, 165, 250);
-                        summary.Text = backgroundOperationLabel + "正在后台继续，可安全查看本页…";
-                    }
                 }
                 else
                 {
@@ -1717,6 +1979,120 @@ namespace EnvironmentDetector
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Show();
             Activate();
+        }
+
+        private void StartBusyPresentation(string title, int total, string idleStatus = "准备中")
+        {
+            busyPresentationRunning = true;
+            backgroundOperationStartedAt = DateTime.UtcNow;
+            backgroundOperationItem = "正在准备…";
+            busyIdleStatus = idleStatus;
+            backgroundOperationPosition = 0;
+            backgroundOperationTotal = Math.Max(0, total);
+            moonPhaseIndex = 0;
+            busyTitle.Text = title;
+            busyMoon.PhaseIndex = moonPhaseIndex;
+            busyStatusCard.Visible = true;
+            UpdateBusyPresentation();
+            busyAnimationTimer.Start();
+        }
+
+        private void SetBusyProgress(string item, int position, int total)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<string, int, int>(SetBusyProgress), item, position, total);
+                return;
+            }
+            backgroundOperationItem = item;
+            backgroundOperationPosition = position;
+            backgroundOperationTotal = total;
+            UpdateBusyPresentation();
+        }
+
+        private void AdvanceBusyAnimation()
+        {
+            if (!busyPresentationRunning) return;
+            moonPhaseIndex = (moonPhaseIndex + 1) % MoonPhaseCount;
+            busyMoon.PhaseIndex = moonPhaseIndex;
+            UpdateBusyPresentation();
+        }
+
+        private void UpdateBusyPresentation()
+        {
+            TimeSpan elapsed = DateTime.UtcNow - backgroundOperationStartedAt;
+            busyItem.Text = "当前项目：" + backgroundOperationItem;
+            string position = backgroundOperationPosition > 0 && backgroundOperationTotal > 0
+                ? backgroundOperationPosition + " / " + backgroundOperationTotal
+                : busyIdleStatus;
+            busyProgress.Text = "处理进度：" + position + " · 已用时间：" +
+                ((int)elapsed.TotalMinutes).ToString("00") + ":" + elapsed.Seconds.ToString("00");
+        }
+
+        private void StopBusyPresentation()
+        {
+            busyPresentationRunning = false;
+            busyAnimationTimer.Stop();
+            busyStatusCard.Visible = false;
+            backgroundOperationItem = "正在准备…";
+            busyIdleStatus = "准备中";
+            backgroundOperationPosition = 0;
+            backgroundOperationTotal = 0;
+        }
+
+        private void ShowBusyWarning(bool closing)
+        {
+            if (busyWarningOpen || IsDisposed) return;
+            busyWarningOpen = true;
+            try
+            {
+                using (BusyWarningDialog dialog = new BusyWarningDialog(closing))
+                    dialog.ShowDialog(this);
+            }
+            finally
+            {
+                busyWarningOpen = false;
+            }
+        }
+
+        private async Task RunInstallationPreview()
+        {
+            string[] previewItems =
+            {
+                "PowerShell 7",
+                "Git for Windows",
+                "FFmpeg（含 FFprobe）",
+                "PyYAML 与 yt-dlp"
+            };
+            backgroundOperationRunning = true;
+            backgroundOperationLabel = "正在模拟…";
+            refreshButton.Enabled = false;
+            copyButton.Enabled = false;
+            repairButton.Enabled = false;
+            restoreUtf8Button.Enabled = false;
+            summary.ForeColor = Color.FromArgb(96, 165, 250);
+            summary.Text = "安装界面模拟中：不会修改这台电脑…";
+            note.Text = "仅模拟等待动画、项目进度和窗口保护；不会运行任何安装或系统配置命令。";
+            StartBusyPresentation("验收模拟：正在补全运行环境", previewItems.Length);
+            try
+            {
+                for (int index = 0; index < previewItems.Length; index++)
+                {
+                    SetBusyProgress(previewItems[index], index + 1, previewItems.Length);
+                    await Task.Delay(8000);
+                }
+            }
+            finally
+            {
+                backgroundOperationRunning = false;
+                backgroundOperationLabel = "";
+                StopBusyPresentation();
+                refreshButton.Enabled = true;
+                summary.ForeColor = Color.FromArgb(74, 222, 128);
+                summary.Text = "模拟验收完成：没有安装软件，也没有修改系统设置。";
+                note.Text = "现在可以正常切换模块或关闭窗口；需要再次验收时可重新启动模拟模式。";
+                UpdateRepairButtons();
+            }
         }
 
         private void UpdateRepairButtons()
@@ -1767,6 +2143,8 @@ namespace EnvironmentDetector
             restoreUtf8Button.Enabled = false;
             summary.ForeColor = Color.FromArgb(96, 165, 250);
             summary.Text = "正在恢复修改前编码…";
+            StartBusyPresentation("正在恢复系统编码", 1);
+            SetBusyProgress("恢复原编码", 1, 1);
             bool success;
             try
             {
@@ -1777,6 +2155,7 @@ namespace EnvironmentDetector
                 scanRunning = false;
                 backgroundOperationRunning = false;
                 backgroundOperationLabel = "";
+                StopBusyPresentation();
             }
             MessageBox.Show(success
                     ? "原编码已恢复。必须重启 Windows 才能完整生效。"
@@ -1809,11 +2188,15 @@ namespace EnvironmentDetector
             repairButton.Enabled = false;
             summary.ForeColor = Color.FromArgb(96, 165, 250);
             summary.Text = "正在自动补全，请不要关闭窗口…";
+            StartBusyPresentation("正在补全运行环境", targets.Count);
             try
             {
-                List<RepairResult> results = await Task.Run(() => RepairEngine.Repair(repairInput));
+                List<RepairResult> results = await Task.Run(() => RepairEngine.Repair(repairInput,
+                    (name, position, total) => SetBusyProgress(name, position, total)));
                 if (includesUtf8)
                 {
+                    int utf8Position = targets.IndexOf("UTF-8 全球语言支持") + 1;
+                    SetBusyProgress("UTF-8 全球语言支持", utf8Position, targets.Count);
                     bool utf8Success = await Task.Run(() => Utf8Repair.StartElevated());
                     results.Add(new RepairResult
                     {
@@ -1832,6 +2215,7 @@ namespace EnvironmentDetector
             {
                 backgroundOperationRunning = false;
                 backgroundOperationLabel = "";
+                StopBusyPresentation();
             }
             await RunScan();
         }
@@ -1886,7 +2270,7 @@ namespace EnvironmentDetector
         public static string Build(IEnumerable<CheckResult> results, bool codexMode)
         {
             StringBuilder report = new StringBuilder();
-            report.AppendLine(codexMode ? "Codex 环境补全 v1.0.1" : "软件安装检查 v1.0.1");
+            report.AppendLine(codexMode ? "Codex 环境补全 v1.1.0" : "软件安装检查 v1.1.0");
             report.AppendLine("检测时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine(codexMode
                 ? "范围：可由本工具自行安装或配置的环境"
@@ -1928,6 +2312,13 @@ namespace EnvironmentDetector
                 codexMode = String.Equals(requestedMode, "codex", StringComparison.OrdinalIgnoreCase);
                 effectiveArguments.RemoveRange(0, 2);
                 args = effectiveArguments.ToArray();
+            }
+            bool previewInstallation = args.Length == 1 &&
+                String.Equals(args[0], "--preview-installation", StringComparison.OrdinalIgnoreCase);
+            if (previewInstallation)
+            {
+                codexMode = true;
+                args = new string[0];
             }
             if (args.Length == 1 && String.Equals(args[0], "--enable-utf8", StringComparison.OrdinalIgnoreCase))
             {
@@ -1975,7 +2366,7 @@ namespace EnvironmentDetector
                 }
                 try
                 {
-                    Application.Run(new MainForm(codexMode, softwareEvent, codexEvent));
+                    Application.Run(new MainForm(codexMode, softwareEvent, codexEvent, previewInstallation));
                 }
                 finally
                 {

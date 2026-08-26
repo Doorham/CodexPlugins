@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.11.2"
+APP_VERSION = "0.11.3"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
 INSTANCE_VERSION_MARKER = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "CompanyAIHelpers" / "CodexTools" / "plugin-station-version.txt"

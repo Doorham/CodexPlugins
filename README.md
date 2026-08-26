@@ -101,3 +101,5 @@ git diff --check
 ## 开源许可证
 
 本项目采用 [Apache License 2.0](LICENSE) 开源。使用、修改和分发时请遵守许可证条款；许可证不授予项目名称或商标的额外使用权。
+环境工具内嵌的 Microsoft Fluent Emoji 月相图采用 MIT License，完整归属与许可文本见
+[第三方许可说明](helpers/environment-detector/THIRD-PARTY-NOTICES.md)。

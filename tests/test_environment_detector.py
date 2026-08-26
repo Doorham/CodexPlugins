@@ -20,6 +20,7 @@ SOFTWARE_MANIFEST = APP_ROOT / "plugins" / "software-environment-checker" / "plu
 CODEX_MANIFEST = APP_ROOT / "plugins" / "codex-environment-helper" / "plugin.json"
 SOURCE = ROOT / "helpers" / "environment-detector" / "src" / "Program.cs"
 ARTIFACT = ROOT / "artifacts" / "helpers" / "EnvironmentDetector.exe"
+MOON_ASSETS = ROOT / "helpers" / "environment-detector" / "assets" / "fluent-emoji-3d"
 
 
 class EnvironmentDetectorTests(unittest.TestCase):
@@ -27,19 +28,24 @@ class EnvironmentDetectorTests(unittest.TestCase):
         software = json.loads(SOFTWARE_MANIFEST.read_text(encoding="utf-8"))
         codex = json.loads(CODEX_MANIFEST.read_text(encoding="utf-8"))
 
-        self.assertEqual(software["moduleVersion"], "1.0.1")
-        self.assertEqual(codex["moduleVersion"], "1.0.1")
+        self.assertEqual(software["moduleVersion"], "1.1.0")
+        self.assertEqual(codex["moduleVersion"], "1.1.0")
         self.assertEqual(software["executable"], codex["executable"])
         self.assertEqual(software["installSource"], codex["installSource"])
         self.assertEqual(software["processName"], "EnvironmentDetector.exe")
         self.assertEqual(software["startArguments"], ["--mode", "software"])
         self.assertEqual(codex["startArguments"], ["--mode", "codex"])
+        self.assertEqual(software["supportFiles"], codex["supportFiles"])
+        self.assertEqual(
+            software["supportFiles"][0]["source"],
+            "helpers/environment-detector/THIRD-PARTY-NOTICES.md",
+        )
 
     def test_release_index_lists_both_public_modules(self) -> None:
         release = json.loads((ROOT / "ONLINE-RELEASE.json").read_text(encoding="utf-8"))
         versions = {item["id"]: item["version"] for item in release["modules"]}
-        self.assertEqual(versions["software-environment-checker"], "1.0.1")
-        self.assertEqual(versions["codex-environment-helper"], "1.0.1")
+        self.assertEqual(versions["software-environment-checker"], "1.1.0")
+        self.assertEqual(versions["codex-environment-helper"], "1.1.0")
 
     def test_process_handler_passes_reviewed_start_arguments_without_shell(self) -> None:
         service = object.__new__(ControlService)
@@ -74,16 +80,85 @@ class EnvironmentDetectorTests(unittest.TestCase):
         self.assertGreaterEqual(source.count("WriteSnapshot(original)"), 2)
         self.assertIn("RunFileFormatSelfTest", source)
 
-    def test_window_can_switch_pages_without_interrupting_background_completion(self) -> None:
+    def test_window_blocks_module_switch_and_close_during_background_completion(self) -> None:
         source = SOURCE.read_text(encoding="utf-8")
         self.assertIn("private bool backgroundOperationRunning;", source)
         self.assertIn("private List<CheckResult> lastAllResults", source)
         self.assertIn("List<CheckResult> repairInput = lastResults.ToList();", source)
-        self.assertIn("RepairEngine.Repair(repairInput)", source)
-        self.assertIn("正在后台继续，可安全查看本页", source)
+        self.assertIn("backgroundOperationRunning && requestedCodexMode != codexMode", source)
+        self.assertIn("e.CloseReason == CloseReason.UserClosing && backgroundOperationRunning", source)
+        self.assertIn("ShowBusyWarning(false)", source)
+        self.assertIn("ShowBusyWarning(true)", source)
         timer_start = source.index("requestTimer.Tick += async delegate")
         timer_end = source.index("Shown += async delegate", timer_start)
         self.assertNotIn("if (scanRunning) return", source[timer_start:timer_end])
+
+    def test_background_completion_uses_moon_phase_animation_and_real_item_progress(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("internal sealed class MoonPhaseIndicator : Control", source)
+        self.assertIn("private const int MoonPhaseCount = 8", source)
+        moon_start = source.index("internal sealed class MoonPhaseIndicator : Control")
+        moon_end = source.index("internal sealed class BusyStatusCard", moon_start)
+        moon = source[moon_start:moon_end]
+        self.assertIn("GetManifestResourceStream", moon)
+        self.assertIn("EnvironmentDetector.Moon01Full.png", moon)
+        self.assertIn("EnvironmentDetector.Moon08WaxingGibbous.png", moon)
+        self.assertIn("Format32bppPArgb", moon)
+        self.assertIn("WrapMode.TileFlipXY", moon)
+        self.assertNotIn("Segoe UI Emoji", source)
+        self.assertIn('StartBusyPresentation("正在补全运行环境", targets.Count)', source)
+        self.assertIn("SetBusyProgress(name, position, total)", source)
+        self.assertIn("当前项目：", source)
+        self.assertIn("处理进度：", source)
+        self.assertNotIn("ProgressBar", source)
+
+    def test_official_fluent_moon_assets_and_license_are_packaged(self) -> None:
+        expected = [
+            "01-full-moon.png",
+            "02-waning-gibbous.png",
+            "03-last-quarter.png",
+            "04-waning-crescent.png",
+            "05-new-moon.png",
+            "06-waxing-crescent.png",
+            "07-first-quarter.png",
+            "08-waxing-gibbous.png",
+        ]
+        self.assertEqual(sorted(path.name for path in MOON_ASSETS.glob("*.png")), expected)
+        for name in expected:
+            data = (MOON_ASSETS / name).read_bytes()
+            self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+        notice = (ROOT / "helpers" / "environment-detector" / "THIRD-PARTY-NOTICES.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Microsoft Fluent Emoji", notice)
+        self.assertIn("MIT License", notice)
+        build = (ROOT / "scripts" / "build-helpers.ps1").read_text(encoding="utf-8")
+        self.assertIn("$environmentMoonResources", build)
+        self.assertIn("EnvironmentDetector.Moon01Full.png", build)
+        self.assertIn("EnvironmentDetector.Moon08WaxingGibbous.png", build)
+
+    def test_installation_preview_is_visible_but_never_runs_repair_commands(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn('"--preview-installation"', source)
+        preview_start = source.index("private async Task RunInstallationPreview()")
+        preview_end = source.index("private void UpdateRepairButtons()", preview_start)
+        preview = source[preview_start:preview_end]
+        self.assertIn("StartBusyPresentation", preview)
+        self.assertIn("SetBusyProgress", preview)
+        self.assertIn("Task.Delay", preview)
+        self.assertNotIn("RepairEngine.Repair", preview)
+        self.assertNotIn("RunRepairCommand", preview)
+        self.assertNotIn("Utf8Repair.StartElevated", preview)
+
+    def test_read_only_scan_reuses_moon_animation_without_install_lock(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        scan_start = source.index("private async Task RunScan()")
+        scan_end = source.index("private async Task SwitchMode", scan_start)
+        scan = source[scan_start:scan_end]
+        self.assertIn('StartBusyPresentation(codexMode ? "正在检测可补全环境"', scan)
+        self.assertIn('"检测中"', scan)
+        self.assertIn("StopBusyPresentation()", scan)
+        self.assertNotIn("backgroundOperationRunning = true", scan)
 
     def test_online_updater_atomically_deploys_the_single_helper(self) -> None:
         updater = (ROOT / "scripts" / "update-from-origin.ps1").read_text(encoding="utf-8")
@@ -117,8 +192,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
             self.assertIn("WINGET_MISSING=PASS", scenario_text)
             self.assertIn("UTF8_BACKUP_FORMAT=PASS", scenario_text)
             self.assertIn("SYSTEM_CHANGES=0", scenario_text)
-            self.assertIn("软件安装检查 v1.0.1", software_report.read_text(encoding="utf-8"))
-            self.assertIn("Codex 环境补全 v1.0.1", codex_report.read_text(encoding="utf-8"))
+            self.assertIn("软件安装检查 v1.1.0", software_report.read_text(encoding="utf-8"))
+            self.assertIn("Codex 环境补全 v1.1.0", codex_report.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
