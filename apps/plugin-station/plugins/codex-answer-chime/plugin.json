@@ -1,8 +1,8 @@
 {
   "id": "codex-answer-chime",
   "name": "Codex 完成提示音",
-  "moduleVersion": "1.0.1",
-  "developers": ["Doorham"],
+  "moduleVersion": "1.0.2",
+  "developers": ["Doorham", "Althy"],
   "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。每次完成回答都会播放指定提示音。",
   "category": "Agent 联动",
   "icon": "♫",

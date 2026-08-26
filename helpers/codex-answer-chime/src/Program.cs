@@ -22,6 +22,12 @@ namespace CompanyAIHelpers.CodexAnswerChime
 
         static void Main(string[] args)
         {
+            if (args.Length == 1 && string.Equals(args[0], "--test-event-schema", StringComparison.OrdinalIgnoreCase))
+            {
+                Environment.ExitCode = CompletionEventSchemaSelfTest() ? 0 : 3;
+                return;
+            }
+
             if (args.Length == 1 && string.Equals(args[0], "--test-sound", StringComparison.OrdinalIgnoreCase))
             {
                 Environment.ExitCode = PlayNotificationSound() ? 0 : 2;
@@ -86,7 +92,8 @@ namespace CompanyAIHelpers.CodexAnswerChime
                         foreach (string rawLine in text.Split('\n'))
                         {
                             string line = rawLine.TrimEnd('\r');
-                            if (line.Length != 0 && IsFinalAnswerEvent(line) && SeenEvents.Add(Hash(path + "\n" + line)))
+                            string eventKey;
+                            if (line.Length != 0 && TryGetCompletionEventKey(line, out eventKey) && SeenEvents.Add(Hash(path + "\n" + eventKey)))
                                 PlayNotificationSound();
                         }
                         Offsets[path] = offset + completeLength;
@@ -104,8 +111,9 @@ namespace CompanyAIHelpers.CodexAnswerChime
             return 0;
         }
 
-        static bool IsFinalAnswerEvent(string line)
+        static bool TryGetCompletionEventKey(string line, out string eventKey)
         {
+            eventKey = null;
             try
             {
                 var root = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }.DeserializeObject(line) as Dictionary<string, object>;
@@ -113,9 +121,29 @@ namespace CompanyAIHelpers.CodexAnswerChime
                 object payloadValue;
                 if (!root.TryGetValue("payload", out payloadValue)) return false;
                 var payload = payloadValue as Dictionary<string, object>;
-                return payload != null && EqualsText(payload, "type", "agent_message") && EqualsText(payload, "phase", "final_answer");
+                if (payload == null || !EqualsText(payload, "type", "task_complete")) return false;
+
+                object turnValue;
+                string turnId = payload.TryGetValue("turn_id", out turnValue) ? Convert.ToString(turnValue) : null;
+                eventKey = string.IsNullOrWhiteSpace(turnId) ? "task_complete:" + Hash(line) : "task_complete:" + turnId;
+                return true;
             }
             catch { return false; }
+        }
+
+        static bool CompletionEventSchemaSelfTest()
+        {
+            string eventKey;
+            const string completed = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"turn_id\":\"turn-1\"}}";
+            const string started = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-1\"}}";
+            const string wrappedAnswer = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"turn_id\":\"turn-1\",\"item\":{\"type\":\"AgentMessage\",\"phase\":\"final_answer\"}}}";
+            const string responseItem = "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"phase\":\"final_answer\"}}";
+
+            return TryGetCompletionEventKey(completed, out eventKey)
+                && eventKey == "task_complete:turn-1"
+                && !TryGetCompletionEventKey(started, out eventKey)
+                && !TryGetCompletionEventKey(wrappedAnswer, out eventKey)
+                && !TryGetCompletionEventKey(responseItem, out eventKey);
         }
 
         static bool EqualsText(Dictionary<string, object> dict, string key, string expected)
