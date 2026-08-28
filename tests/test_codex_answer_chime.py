@@ -12,8 +12,10 @@ MANIFEST_PATH = ROOT / "apps" / "plugin-station" / "plugins" / "codex-answer-chi
 class CodexAnswerChimeTests(unittest.TestCase):
     def test_manifest_records_completion_event_fix(self) -> None:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(manifest["moduleVersion"], "1.0.3")
+        self.assertEqual(manifest["moduleVersion"], "1.1.0")
         self.assertEqual(manifest["developers"], ["Doorham", "Althy"])
+        self.assertEqual(manifest["name"], "任务完成提示音")
+        self.assertIn("sync_workbuddy", manifest["actions"])
 
     def test_listener_uses_one_task_complete_signal(self) -> None:
         source = SOURCE_PATH.read_text(encoding="utf-8")
@@ -21,6 +23,15 @@ class CodexAnswerChimeTests(unittest.TestCase):
         self.assertIn('"task_complete:" + turnId', source)
         self.assertNotIn('EqualsText(payload, "type", "agent_message")', source)
         self.assertNotIn("GetForegroundWindow", source)
+
+    def test_workbuddy_hook_is_metadata_only_and_non_blocking(self) -> None:
+        source = SOURCE_PATH.read_text(encoding="utf-8")
+        self.assertIn('"--codextools-workbuddy-hook"', source)
+        self.assertIn("CreateProcessW(", source)
+        self.assertIn("DetachedProcess | CreateNoWindow", source)
+        self.assertIn("false,\n                DetachedProcess", source)
+        self.assertNotIn("Console.ReadLine", source)
+        self.assertNotIn("StandardInput", source)
 
     def test_built_helper_event_schema_self_test(self) -> None:
         helper = ROOT / "artifacts" / "helpers" / "CodexAnswerChime.exe"

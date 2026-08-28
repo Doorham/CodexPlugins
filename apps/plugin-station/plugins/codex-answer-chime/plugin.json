@@ -1,9 +1,9 @@
 {
   "id": "codex-answer-chime",
-  "name": "Codex 完成提示音",
-  "moduleVersion": "1.0.3",
+  "name": "任务完成提示音",
+  "moduleVersion": "1.1.0",
   "developers": ["Doorham", "Althy"],
-  "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。每次完成回答都会播放指定提示音。",
+  "description": "同一个模块同时服务 Codex 与 WorkBuddy：Codex 完成回答或 WorkBuddy 完成任务时，都会播放同一提示音。开启时运行 Codex 监听并接入已安装的 WorkBuddy；停用时一起解除。",
   "category": "Agent 联动",
   "icon": "♫",
   "accent": "#8b5cf6",
@@ -20,11 +20,12 @@
     ]
   },
   "keepAlive": true,
-  "actions": ["toggle_enabled", "toggle_startup", "test_sound", "set_sound"],
+  "actions": ["toggle_enabled", "toggle_startup", "test_sound", "set_sound", "sync_workbuddy"],
   "uiActions": [
     {"id": "toggle_enabled", "label": "切换状态", "kind": "toggle"},
     {"id": "test_sound", "label": "测试声音", "kind": "secondary"},
-    {"id": "set_sound", "label": "选择声音", "kind": "secondary", "dialog": "sound"}
+    {"id": "set_sound", "label": "选择声音", "kind": "secondary", "dialog": "sound"},
+    {"id": "sync_workbuddy", "label": "接入 WorkBuddy", "kind": "secondary"}
   ],
   "agentAccess": {"enabled": true, "actions": ["toggle_enabled", "test_sound"]}
 }

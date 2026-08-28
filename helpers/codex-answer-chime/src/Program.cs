@@ -22,6 +22,20 @@ namespace CompanyAIHelpers.CodexAnswerChime
 
         static void Main(string[] args)
         {
+            if (args.Length == 1 && string.Equals(args[0], "--codextools-workbuddy-hook", StringComparison.OrdinalIgnoreCase))
+            {
+                try { StartDetachedPlaybackWorker(); } catch { }
+                Environment.ExitCode = 0;
+                return;
+            }
+
+            if (args.Length == 1 && string.Equals(args[0], "--codextools-chime-worker", StringComparison.OrdinalIgnoreCase))
+            {
+                try { PlayNotificationSound(true); } catch { }
+                Environment.ExitCode = 0;
+                return;
+            }
+
             if (args.Length == 1 && string.Equals(args[0], "--test-event-schema", StringComparison.OrdinalIgnoreCase))
             {
                 Environment.ExitCode = CompletionEventSchemaSelfTest() ? 0 : 3;
@@ -60,6 +74,40 @@ namespace CompanyAIHelpers.CodexAnswerChime
                     while (true) Thread.Sleep(60000);
                 }
             }
+        }
+
+        static void StartDetachedPlaybackWorker()
+        {
+            string executable = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var startup = new StartupInfo();
+            startup.cb = Marshal.SizeOf(typeof(StartupInfo));
+            var commandLine = new StringBuilder("\"" + executable + "\" --codextools-chime-worker");
+            ProcessInformation process;
+            if (CreateProcessW(
+                executable,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                DetachedProcess | CreateNoWindow,
+                IntPtr.Zero,
+                AppDomain.CurrentDomain.BaseDirectory,
+                ref startup,
+                out process))
+            {
+                CloseHandle(process.thread);
+                CloseHandle(process.process);
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = executable,
+                Arguments = "--codextools-chime-worker",
+                WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
         }
 
         static void OnFileEvent(object sender, FileSystemEventArgs e) { ProcessFile(e.FullPath); }
@@ -159,10 +207,16 @@ namespace CompanyAIHelpers.CodexAnswerChime
 
         static bool PlayNotificationSound()
         {
+            return PlayNotificationSound(false);
+        }
+
+        static bool PlayNotificationSound(bool synchronous)
+        {
             string path = GetConfiguredSoundPath();
             if (string.IsNullOrEmpty(path))
             {
                 SystemSounds.Hand.Play();
+                if (synchronous) Thread.Sleep(1500);
                 return true;
             }
             try
@@ -177,15 +231,24 @@ namespace CompanyAIHelpers.CodexAnswerChime
                         ? new SoundPlayer(path)
                         : new SoundPlayer(CurrentWaveStream);
                     CurrentWavePlayer.Load();
-                    CurrentWavePlayer.Play();
+                    if (synchronous) CurrentWavePlayer.PlaySync();
+                    else CurrentWavePlayer.Play();
                     return true;
                 }
                 mciSendString("close CodexAnswerChimeSound", null, 0, IntPtr.Zero);
                 int opened = mciSendString("open \"" + path + "\" alias CodexAnswerChimeSound", null, 0, IntPtr.Zero);
-                if (opened == 0 && mciSendString("play CodexAnswerChimeSound from 0", null, 0, IntPtr.Zero) == 0) return true;
+                string playCommand = synchronous
+                    ? "play CodexAnswerChimeSound from 0 wait"
+                    : "play CodexAnswerChimeSound from 0";
+                if (opened == 0 && mciSendString(playCommand, null, 0, IntPtr.Zero) == 0)
+                {
+                    if (synchronous) mciSendString("close CodexAnswerChimeSound", null, 0, IntPtr.Zero);
+                    return true;
+                }
             }
             catch { }
             SystemSounds.Hand.Play();
+            if (synchronous) Thread.Sleep(1500);
             return false;
         }
 
@@ -298,6 +361,59 @@ namespace CompanyAIHelpers.CodexAnswerChime
             }
             catch { }
         }
+
+        const uint DetachedProcess = 0x00000008;
+        const uint CreateNoWindow = 0x08000000;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct StartupInfo
+        {
+            public int cb;
+            public string reserved;
+            public string desktop;
+            public string title;
+            public int x;
+            public int y;
+            public int xSize;
+            public int ySize;
+            public int xCountChars;
+            public int yCountChars;
+            public int fillAttribute;
+            public int flags;
+            public short showWindow;
+            public short reserved2Length;
+            public IntPtr reserved2;
+            public IntPtr standardInput;
+            public IntPtr standardOutput;
+            public IntPtr standardError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct ProcessInformation
+        {
+            public IntPtr process;
+            public IntPtr thread;
+            public int processId;
+            public int threadId;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool CreateProcessW(
+            string applicationName,
+            StringBuilder commandLine,
+            IntPtr processAttributes,
+            IntPtr threadAttributes,
+            [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+            uint creationFlags,
+            IntPtr environment,
+            string currentDirectory,
+            ref StartupInfo startupInfo,
+            out ProcessInformation processInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool CloseHandle(IntPtr handle);
 
         [DllImport("winmm.dll", CharSet = CharSet.Unicode)] static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr callback);
     }

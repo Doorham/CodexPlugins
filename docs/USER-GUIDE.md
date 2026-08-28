@@ -76,7 +76,7 @@
 | 私人插件 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexTools\PrivatePlugins` | 否 |
 | 自定义直连白名单 | `%LOCALAPPDATA%\CompanyAIHelpers\ProxyOverrideBypass` | 否 |
 | Codex 系统代理备份 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexSystemProxy` | 否 |
-| 提示音与本地设置 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | 否 |
+| Codex/WorkBuddy 任务完成提示音与本地设置 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | 否 |
 | 环境检查备份与本地状态 | `%LOCALAPPDATA%\CompanyAIHelpers\EnvironmentDetector` | 否 |
 
 详细隐私规则见 [SECURITY-PRIVACY.md](SECURITY-PRIVACY.md)。

@@ -9,6 +9,15 @@
 
 ## 变更记录
 
+### 2026-08-28 · v0.11.7 · Codex 与 WorkBuddy 共用任务完成提示音 · Althy
+
+- 保留原 `codex-answer-chime` 插件 ID 和唯一卡片，将显示名称升级为“任务完成提示音”；Codex 与 WorkBuddy 共用同一个播放器、同一份自定义声音设置和同一套启停入口。
+- Codex 继续监听不含回答正文的 `task_complete` 元数据；WorkBuddy 通过用户级 Stop Hook 调用同一 EXE 的非阻塞一次播放入口，Hook 进程忽略 stdin，不读取 transcript 或回答字段。
+- 插件站可安全合并或移除 CodexTools 自己拥有的 WorkBuddy Hook，修改前在本机建立设置备份，并保留所有其他顶层设置、事件和 Stop Hook；无 WorkBuddy 时不创建配置目录。
+- WorkBuddy Hook 使用 Git Bash 兼容路径，快速以退出码 0 返回，再由 Windows 原生无句柄继承的分离子进程完成音频播放，避免长音频、播放失败或输入输出管道阻塞 Agent 完成流程。
+- 新增合并保留、幂等、精确移除、损坏 JSON 停止和 `.codebuddy` 回退测试；仍需 WorkBuddy 在桌面版重启并通过 Hooks 面板完成一次真实 Stop 事件验收。
+- 未解决项：WorkBuddy Hooks 仍是 Beta；外部修改设置后不会对已运行会话热加载，用户需重启 WorkBuddy 并确认 Hook。
+
 ### 2026-08-28 · v0.11.6 · Windows PowerShell 5.1 中文编码兼容 · Althy
 
 - 全部 PowerShell 脚本统一为 UTF-8 with BOM 与 CRLF，避免中文 Windows 上的 Windows PowerShell 5.1 按 ANSI 代码页误读脚本文字。

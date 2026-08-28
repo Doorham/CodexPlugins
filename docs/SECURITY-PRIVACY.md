@@ -31,7 +31,7 @@ CodexPlugins 是公开可审计的开源项目。Public 意味着任何人都可
 | 私人插件 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexTools\PrivatePlugins` | 单台电脑专用功能 |
 | 直连自定义项 | `%LOCALAPPDATA%\CompanyAIHelpers\ProxyOverrideBypass` | 用户自定义域名与备份 |
 | Codex 代理备份 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexSystemProxy` | 修改前的本机备份 |
-| 回答提示音 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | 自定义音频与设置 |
+| 任务完成提示音 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | Codex 与 WorkBuddy 共用的自定义音频、设置及 WorkBuddy 配置备份 |
 | 环境检查器 | `%LOCALAPPDATA%\CompanyAIHelpers\EnvironmentDetector` | UTF-8 代码页快照与本地恢复资料 |
 | Python 环境 | 仓库内 `.runtime` | 本地依赖环境 |
 | 助手构建产物 | 仓库内 `artifacts` | 当前电脑编译出的程序 |

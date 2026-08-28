@@ -27,6 +27,11 @@ from .codex_system_proxy import (
     ensure_system_proxy_feature,
     windows_system_proxy_status,
 )
+from .workbuddy_chime import (
+    ensure_workbuddy_hook,
+    remove_workbuddy_hook,
+    workbuddy_hook_status,
+)
 CREATE_NO_WINDOW = 0x08000000
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -74,7 +79,7 @@ def read_run_value(name: str) -> str | None:
 class ControlService:
     HANDLERS = {"process_app", "proxy_override", "codex_system_proxy"}
     HANDLER_ACTIONS = {
-        "process_app": {"toggle_enabled", "start", "stop", "restart", "test_sound", "set_sound", "open_folder", "toggle_startup"},
+        "process_app": {"toggle_enabled", "start", "stop", "restart", "test_sound", "set_sound", "open_folder", "toggle_startup", "sync_workbuddy"},
         "proxy_override": {"refresh", "add_domain", "list_domains", "delete_domain"},
         "codex_system_proxy": {"refresh", "repair"},
     }
@@ -200,7 +205,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.11.6",
+                "version": "0.11.7",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -343,7 +348,10 @@ class ControlService:
         exe = expand_path(plugin["executable"])
         pids = process_pids(plugin["processName"])
         startup_enabled = self._startup_enabled(plugin, exe)
-        enabled = bool(pids or startup_enabled)
+        workbuddy = None
+        if plugin["id"] == "codex-answer-chime":
+            workbuddy = workbuddy_hook_status(exe)
+        enabled = bool(pids or startup_enabled or (workbuddy and workbuddy.get("enabled")))
         recovery_available = bool(plugin.get("keepAlive") and startup_enabled and not pids)
         keep_alive_error = getattr(self, "_keep_alive_errors", {}).get(str(plugin["id"]))
         if pids and startup_enabled:
@@ -372,6 +380,14 @@ class ControlService:
             details.append("常驻保护：已开启")
         if plugin["id"] == "codex-answer-chime":
             details.append(f"提示音：{sound_name}" if sound_name else "提示音：Windows 错误音（默认）")
+            if not workbuddy or not workbuddy.get("detected"):
+                details.append("WorkBuddy：未检测到，Codex 提示音仍可独立使用")
+            elif not workbuddy.get("valid"):
+                details.append(f"WorkBuddy：{workbuddy.get('error')}")
+            elif workbuddy.get("enabled"):
+                details.append("WorkBuddy：已接入同一任务完成提示音")
+            else:
+                details.append("WorkBuddy：待接入，可使用本卡片配置")
         metric = None
         if plugin["id"] == "arctis-nova-5-battery":
             reading = self._arctis_battery_reading() if pids else {"online": False}
@@ -396,6 +412,8 @@ class ControlService:
             "statusText": status_text,
             "detailLines": details,
             "metric": metric,
+            "workbuddyDetected": bool(workbuddy and workbuddy.get("detected")),
+            "workbuddyHookEnabled": bool(workbuddy and workbuddy.get("enabled")),
         }
 
     def _local_status_metric(self, plugin: dict[str, Any], monitor_running: bool) -> tuple[dict[str, str], list[str]]:
@@ -526,6 +544,14 @@ class ControlService:
             return self._toggle_enabled(plugin, exe)
         if action == "set_sound":
             return self._set_sound(exe, str(payload.get("path", "")))
+        if action == "sync_workbuddy":
+            if plugin["id"] != "codex-answer-chime":
+                raise ValueError("只有任务完成提示音支持 WorkBuddy 接入")
+            self._ensure_installed(plugin, exe)
+            result = ensure_workbuddy_hook(exe, exe.parent / "Backups")
+            if result["changed"]:
+                return "WorkBuddy 已接入同一提示音；请重启 WorkBuddy 并检查 Hooks 后生效"
+            return "WorkBuddy 已正确接入同一提示音，无需重复配置"
         if action in {"start", "restart", "test_sound"}:
             self._ensure_installed(plugin, exe)
         if action in {"stop", "restart"}:
@@ -555,15 +581,24 @@ class ControlService:
     def _toggle_enabled(self, plugin: dict[str, Any], exe: Path) -> str:
         pids = process_pids(plugin["processName"])
         startup_enabled = self._startup_enabled(plugin, exe)
+        workbuddy = workbuddy_hook_status(exe) if plugin["id"] == "codex-answer-chime" else None
         if plugin.get("keepAlive") and startup_enabled and not pids:
             if self._recover_keep_alive(plugin, user_initiated=True):
                 return "已恢复运行；开机自启动保持开启"
-        if pids or startup_enabled:
+        if pids or startup_enabled or (workbuddy and workbuddy.get("enabled")):
             if pids:
                 hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
                 time.sleep(0.35)
             self._set_startup(plugin, exe, False)
-            return "已停用；程序已停止，开机自启动已关闭"
+            workbuddy_note = ""
+            if workbuddy and workbuddy.get("detected"):
+                try:
+                    result = remove_workbuddy_hook(exe.parent / "Backups")
+                    if result["changed"]:
+                        workbuddy_note = "；WorkBuddy 完成事件已解除"
+                except Exception as exc:
+                    workbuddy_note = f"；但 WorkBuddy 接入未能解除：{exc}"
+            return f"已停用；Codex 监听已停止，开机自启动已关闭{workbuddy_note}"
 
         self._ensure_installed(plugin, exe)
         self._set_startup(plugin, exe, True)
@@ -581,7 +616,15 @@ class ControlService:
         if not process_pids(plugin["processName"]):
             self._set_startup(plugin, exe, False)
             raise RuntimeError("程序未能保持运行，已回滚开机自启动")
-        return "已开启；程序正在运行，并已加入开机自启动"
+        if workbuddy and workbuddy.get("detected"):
+            try:
+                result = ensure_workbuddy_hook(exe, exe.parent / "Backups")
+                note = "；WorkBuddy 已接入，请重启 WorkBuddy 并检查 Hooks" if result["changed"] else "；WorkBuddy 已接入"
+            except Exception as exc:
+                note = f"；Codex 已开启，但 WorkBuddy 接入失败：{exc}"
+        else:
+            note = "；未检测到 WorkBuddy"
+        return f"已开启；Codex 监听正在运行，并已加入开机自启动{note}"
 
     def _ensure_installed(self, plugin: dict[str, Any], exe: Path) -> None:
         if not exe.exists():
