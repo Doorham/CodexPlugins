@@ -30,6 +30,9 @@ from .codex_system_proxy import (
 CREATE_NO_WINDOW = 0x08000000
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+KEEP_ALIVE_WINDOW_SECONDS = 10 * 60
+KEEP_ALIVE_MAX_ATTEMPTS = 3
+KEEP_ALIVE_START_GRACE_SECONDS = 0.8
 
 
 def expand_path(value: str) -> Path:
@@ -84,6 +87,8 @@ class ControlService:
         self._lock = threading.RLock()
         self._arctis_battery_cache: tuple[float, dict[str, Any]] | None = None
         self._hardware_presence_cache: dict[str, tuple[float, bool]] = {}
+        self._keep_alive_attempts: dict[str, list[float]] = {}
+        self._keep_alive_errors: dict[str, str] = {}
         self._codex_proxy_diagnostic: dict[str, Any] | None = None
         self._ensure_private_layer()
         self.plugins = self._load_plugins()
@@ -137,6 +142,11 @@ class ControlService:
             for value in start_arguments
         ):
             raise ValueError(f"Invalid startArguments in {manifest_path}")
+        if "keepAlive" in data:
+            if not isinstance(data["keepAlive"], bool):
+                raise ValueError(f"keepAlive must be a boolean in {manifest_path}")
+            if data["keepAlive"] and (handler != "process_app" or not data.get("startup") or hardware_gate):
+                raise ValueError(f"keepAlive requires a non-hardware process_app with startup in {manifest_path}")
         if data.get("bundle"):
             raise ValueError(f"External binary bundles are not supported in the online edition: {manifest_path}")
         if scope == "private":
@@ -183,12 +193,14 @@ class ControlService:
                     self._sync_hardware_lifecycle(plugin, available)
                     if not available:
                         continue
+                elif plugin.get("keepAlive"):
+                    self._sync_keep_alive_lifecycle(plugin)
                 cards.append(self._plugin_status(plugin))
         return {
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.11.4",
+                "version": "0.11.5",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -263,6 +275,15 @@ class ControlService:
             detail = self._proxy_status(plugin)
         else:
             detail = self._codex_proxy_status(plugin)
+        actions = [dict(item) for item in plugin.get("uiActions", [])]
+        if detail.get("recoveryAvailable"):
+            for action in actions:
+                if action.get("id") == "toggle_enabled":
+                    action["label"] = "恢复运行"
+            if "toggle_startup" in plugin.get("actions", []) and not any(
+                action.get("id") == "toggle_startup" for action in actions
+            ):
+                actions.append({"id": "toggle_startup", "label": "关闭自启", "kind": "secondary"})
         return {
             "id": plugin["id"],
             "name": plugin["name"],
@@ -274,7 +295,7 @@ class ControlService:
             "icon": plugin.get("icon", "◇"),
             "accent": plugin.get("accent", "#8b5cf6"),
             "mode": plugin.get("mode", "background"),
-            "actions": plugin.get("uiActions", []),
+            "actions": actions,
             "agentEnabled": plugin.get("agentAccess", {}).get("enabled", False),
             **detail,
         }
@@ -323,8 +344,12 @@ class ControlService:
         pids = process_pids(plugin["processName"])
         startup_enabled = self._startup_enabled(plugin, exe)
         enabled = bool(pids or startup_enabled)
+        recovery_available = bool(plugin.get("keepAlive") and startup_enabled and not pids)
+        keep_alive_error = getattr(self, "_keep_alive_errors", {}).get(str(plugin["id"]))
         if pids and startup_enabled:
             status_text = "已开启"
+        elif recovery_available and keep_alive_error:
+            status_text = "自动恢复已暂停"
         elif enabled:
             status_text = "状态待同步"
         else:
@@ -341,6 +366,10 @@ class ControlService:
             f"当前进程：{', '.join(str(pid) for pid in pids) if pids else '无'}",
             f"开机自启动：{'已开启' if startup_enabled else '已关闭'}",
         ]
+        if keep_alive_error:
+            details.append(f"常驻保护：{keep_alive_error}")
+        elif plugin.get("keepAlive") and startup_enabled:
+            details.append("常驻保护：已开启")
         if plugin["id"] == "codex-answer-chime":
             details.append(f"提示音：{sound_name}" if sound_name else "提示音：Windows 错误音（默认）")
         metric = None
@@ -363,6 +392,7 @@ class ControlService:
             "pids": pids,
             "startupEnabled": startup_enabled,
             "enabled": enabled,
+            "recoveryAvailable": recovery_available,
             "statusText": status_text,
             "detailLines": details,
             "metric": metric,
@@ -436,6 +466,60 @@ class ControlService:
         )
         time.sleep(0.35)
 
+    def _recent_keep_alive_attempts(self, plugin_id: str, now: float) -> list[float]:
+        attempts = [
+            value for value in self._keep_alive_attempts.get(plugin_id, [])
+            if now - value < KEEP_ALIVE_WINDOW_SECONDS
+        ]
+        self._keep_alive_attempts[plugin_id] = attempts
+        return attempts
+
+    def _start_plugin_process(self, plugin: dict[str, Any], exe: Path) -> None:
+        subprocess.Popen(
+            [str(exe), *plugin.get("startArguments", [])],
+            cwd=str(exe.parent),
+            creationflags=CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+            close_fds=True,
+        )
+
+    def _recover_keep_alive(self, plugin: dict[str, Any], *, user_initiated: bool = False) -> bool:
+        plugin_id = str(plugin["id"])
+        exe = expand_path(plugin["executable"])
+        if process_pids(plugin["processName"]):
+            self._keep_alive_errors.pop(plugin_id, None)
+            return True
+        if not self._startup_enabled(plugin, exe):
+            self._keep_alive_errors.pop(plugin_id, None)
+            return False
+
+        now = time.monotonic()
+        attempts = self._recent_keep_alive_attempts(plugin_id, now)
+        if len(attempts) >= KEEP_ALIVE_MAX_ATTEMPTS and not user_initiated:
+            self._keep_alive_errors[plugin_id] = "十分钟内恢复三次仍未稳定，已停止自动重试"
+            return False
+        attempts.append(now)
+        if len(attempts) > KEEP_ALIVE_MAX_ATTEMPTS:
+            del attempts[:-KEEP_ALIVE_MAX_ATTEMPTS]
+
+        try:
+            self._ensure_installed(plugin, exe)
+            self._start_plugin_process(plugin, exe)
+            time.sleep(KEEP_ALIVE_START_GRACE_SECONDS)
+            if not process_pids(plugin["processName"]):
+                raise RuntimeError("程序启动后未能保持运行")
+        except Exception as exc:
+            self._keep_alive_errors[plugin_id] = str(exc)
+            if user_initiated:
+                raise RuntimeError(f"恢复运行失败：{exc}") from exc
+            return False
+
+        self._keep_alive_errors.pop(plugin_id, None)
+        return True
+
+    def _sync_keep_alive_lifecycle(self, plugin: dict[str, Any]) -> None:
+        if plugin.get("keepAlive"):
+            self._recover_keep_alive(plugin)
+
     def _process_action(self, plugin: dict[str, Any], action: str, payload: dict[str, Any]) -> str:
         exe = expand_path(plugin["executable"])
         if action == "toggle_enabled":
@@ -448,12 +532,7 @@ class ControlService:
             hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
             time.sleep(0.35)
         if action in {"start", "restart"}:
-            subprocess.Popen(
-                [str(exe), *plugin.get("startArguments", [])],
-                cwd=str(exe.parent),
-                creationflags=CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-                close_fds=True,
-            )
+            self._start_plugin_process(plugin, exe)
             time.sleep(0.6)
             return "已启动" if action == "start" else "已重启"
         if action == "stop":
@@ -476,6 +555,9 @@ class ControlService:
     def _toggle_enabled(self, plugin: dict[str, Any], exe: Path) -> str:
         pids = process_pids(plugin["processName"])
         startup_enabled = self._startup_enabled(plugin, exe)
+        if plugin.get("keepAlive") and startup_enabled and not pids:
+            if self._recover_keep_alive(plugin, user_initiated=True):
+                return "已恢复运行；开机自启动保持开启"
         if pids or startup_enabled:
             if pids:
                 hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])

@@ -1,8 +1,8 @@
 {
   "id": "updream-clipboard-cleaner",
   "name": "Updream 剪贴板清理",
-  "moduleVersion": "1.0.2",
-  "developers": ["Doorham", "XY"],
+  "moduleVersion": "1.0.3",
+  "developers": ["Doorham", "XY", "Althy"],
   "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。复制画布时仅保留可粘贴的原始图片格式。",
   "category": "剪贴板",
   "icon": "▣",
@@ -16,7 +16,8 @@
     "type": "shortcut",
     "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Updream Clipboard Cleaner.lnk"
   },
-  "actions": ["toggle_enabled"],
+  "keepAlive": true,
+  "actions": ["toggle_enabled", "toggle_startup"],
   "uiActions": [
     {"id": "toggle_enabled", "label": "切换状态", "kind": "toggle"}
   ],

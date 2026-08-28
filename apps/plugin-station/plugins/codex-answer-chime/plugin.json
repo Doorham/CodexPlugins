@@ -1,7 +1,7 @@
 {
   "id": "codex-answer-chime",
   "name": "Codex 完成提示音",
-  "moduleVersion": "1.0.2",
+  "moduleVersion": "1.0.3",
   "developers": ["Doorham", "Althy"],
   "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。每次完成回答都会播放指定提示音。",
   "category": "Agent 联动",
@@ -19,7 +19,8 @@
       "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Codex Answer Chime.lnk"
     ]
   },
-  "actions": ["toggle_enabled", "test_sound", "set_sound"],
+  "keepAlive": true,
+  "actions": ["toggle_enabled", "toggle_startup", "test_sound", "set_sound"],
   "uiActions": [
     {"id": "toggle_enabled", "label": "切换状态", "kind": "toggle"},
     {"id": "test_sound", "label": "测试声音", "kind": "secondary"},

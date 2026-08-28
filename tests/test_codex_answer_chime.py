@@ -12,7 +12,7 @@ MANIFEST_PATH = ROOT / "apps" / "plugin-station" / "plugins" / "codex-answer-chi
 class CodexAnswerChimeTests(unittest.TestCase):
     def test_manifest_records_completion_event_fix(self) -> None:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(manifest["moduleVersion"], "1.0.2")
+        self.assertEqual(manifest["moduleVersion"], "1.0.3")
         self.assertEqual(manifest["developers"], ["Doorham", "Althy"])
 
     def test_listener_uses_one_task_complete_signal(self) -> None:
