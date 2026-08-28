@@ -37,7 +37,7 @@ def _refresh_wininet() -> None:
 def main() -> int:
     manifest = APP_ROOT / "plugins" / "proxy-bypass" / "plugin.json"
     if not manifest.is_file():
-        print(json.dumps({"ok": False, "message": "直连白名单插件清单不存在"}, ensure_ascii=False))
+        print(json.dumps({"ok": False, "message": "直连白名单插件清单不存在"}, ensure_ascii=True))
         return 0
     plugin = json.loads(manifest.read_text(encoding="utf-8"))
     local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
@@ -73,7 +73,7 @@ def main() -> int:
         "clashVergeChanged": clash["changed"],
         "configBackup": clash.get("backup"),
         "message": "Windows 与 Clash Verge 直连白名单已同步",
-    }, ensure_ascii=False))
+    }, ensure_ascii=True))
     return 0
 
 

@@ -1,4 +1,4 @@
-param([switch]$Console)
+﻿param([switch]$Console)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot

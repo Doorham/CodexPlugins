@@ -35,7 +35,7 @@ class CodexSystemProxyTests(unittest.TestCase):
     def test_online_manifest_and_release_agree(self) -> None:
         release = json.loads(RELEASE_PATH.read_text(encoding="utf-8"))
         module = next(item for item in release["modules"] if item["id"] == self.plugin["id"])
-        self.assertEqual(release["version"], "0.11.5")
+        self.assertEqual(release["version"], "0.11.6")
         self.assertEqual(self.plugin["moduleVersion"], "1.1.0")
         self.assertEqual(self.plugin["name"], "Codex 对话 timeout 修复")
         self.assertEqual(self.plugin["developers"], ["Althy"])

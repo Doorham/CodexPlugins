@@ -9,6 +9,15 @@
 
 ## 变更记录
 
+### 2026-08-28 · v0.11.6 · Windows PowerShell 5.1 中文编码兼容 · Althy
+
+- 全部 PowerShell 脚本统一为 UTF-8 with BOM 与 CRLF，避免中文 Windows 上的 Windows PowerShell 5.1 按 ANSI 代码页误读脚本文字。
+- 桌面快捷方式安装、私人插件生成和开发启动脚本不再因中文路径、标签或提示文字发生乱码及 `.lnk` 后缀损坏。
+- 两个 Python 启动期维护脚本改用 ASCII JSON 跨越原生进程边界，再由 PowerShell 解析并显示中文，避免 Python UTF-8 输出被 PowerShell 5.1 按本地代码页误解。
+- 新增全仓 BOM 编码守卫，并由 `.gitattributes` 仅统一 PowerShell 脚本的 CRLF；不使用存在客户端兼容风险的 `working-tree-encoding`。
+- 验证完成：Windows PowerShell 5.1 成功解析全部 11 个脚本；完整 `unittest` 共 64 项及 `git diff --check` 全部通过。
+- 未解决项：无。
+
 ### 2026-08-28 · v0.11.5 · 后台常驻助手自动恢复 · Althy
 
 - 为 `process_app` 增加显式 `keepAlive` 生命周期策略；只有已开启自启的常驻模块在进程意外消失后，才会由工具箱启动及五秒状态刷新自动恢复。

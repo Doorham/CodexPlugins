@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $installDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CompanyAIHelpers\UpdreamClipboardCleaner'
 $startupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Updream Clipboard Cleaner.lnk'
 Get-Process -Name 'UpdreamClipboardCleaner' -ErrorAction SilentlyContinue | Stop-Process -Force

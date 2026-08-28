@@ -27,7 +27,9 @@ def main() -> int:
         }
     except (OSError, ValueError, RuntimeError) as exc:
         payload = {"ok": False, "changed": False, "configBackup": None, "message": str(exc)}
-    print(json.dumps(payload, ensure_ascii=False))
+    # Keep the native-process boundary ASCII-only. Windows PowerShell 5.1 may
+    # otherwise decode redirected UTF-8 output with the active ANSI code page.
+    print(json.dumps(payload, ensure_ascii=True))
     return 0
 
 

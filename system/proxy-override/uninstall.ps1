@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $recordDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CompanyAIHelpers\ProxyOverrideBypass'
 $recordPath = Join-Path $recordDir 'install-record.json'
 if (-not (Test-Path -LiteralPath $recordPath)) { throw "Install record not found: $recordPath" }
