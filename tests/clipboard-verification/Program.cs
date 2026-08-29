@@ -25,10 +25,12 @@ class ClipboardVerification
         });
         Thread.Sleep(900);
         var composite = Snapshot();
-        bool compositeOk = composite.ContainsKey(PNG) && composite.ContainsKey(CF_DIB) && composite.ContainsKey(CF_DIBV5) &&
-            !composite.ContainsKey(CF_UNICODETEXT) && Equal(composite[PNG], PngBytes) &&
-            IsCompatibleDib(composite[CF_DIB], 40) && IsCompatibleDib(composite[CF_DIBV5], 124);
+        var compositeOrder = SnapshotOrder();
+        bool compositeOk = composite.Count == 1 && composite.ContainsKey(CF_DIB) &&
+            !composite.ContainsKey(CF_UNICODETEXT) && IsCompatibleDib(composite[CF_DIB], 40, 24);
         results.Add("CompositePngCanvasNodes=" + (compositeOk ? "PASS" : "FAIL") + ";Formats=" + string.Join(",", composite.Keys));
+        bool photoshopStrictOk = compositeOrder.Count == 1 && compositeOrder[0] == CF_DIB;
+        results.Add("PhotoshopStrictClipboard=" + (photoshopStrictOk ? "PASS" : "FAIL") + ";Order=" + string.Join(",", compositeOrder));
 
         string ordinaryText = "ordinary clipboard text 2026-08-17";
         SetClipboard(new Dictionary<uint, byte[]> { { CF_UNICODETEXT, Encoding.Unicode.GetBytes(ordinaryText + "\0") } });
@@ -69,7 +71,7 @@ class ClipboardVerification
         results.Add("InvalidPngWithCanvasJson=" + (fakeOk ? "PASS" : "FAIL"));
 
         Console.WriteLine(string.Join(Environment.NewLine, results));
-        return compositeOk && textOk && jsonOk && imageOk && fileOk && fakeOk ? 0 : 1;
+        return compositeOk && photoshopStrictOk && textOk && jsonOk && imageOk && fileOk && fakeOk ? 0 : 1;
     }
 
     static void SetClipboard(Dictionary<uint, byte[]> values)
@@ -108,6 +110,19 @@ class ClipboardVerification
         return result;
     }
 
+    static List<uint> SnapshotOrder()
+    {
+        var result = new List<uint>();
+        OpenWithRetry();
+        try
+        {
+            uint f = 0;
+            while ((f = EnumClipboardFormats(f)) != 0) result.Add(f);
+        }
+        finally { CloseClipboard(); }
+        return result;
+    }
+
     static void OpenWithRetry()
     {
         for (int i = 0; i < 30; i++) { if (OpenClipboard(IntPtr.Zero)) return; Thread.Sleep(20); }
@@ -125,12 +140,12 @@ class ClipboardVerification
         return b;
     }
 
-    static bool IsCompatibleDib(byte[] bytes, int expectedHeaderSize)
+    static bool IsCompatibleDib(byte[] bytes, int expectedHeaderSize, short expectedBitCount)
     {
         return bytes != null && bytes.Length >= expectedHeaderSize + 4 &&
             BitConverter.ToInt32(bytes, 0) == expectedHeaderSize &&
             BitConverter.ToInt32(bytes, 4) == 1 && BitConverter.ToInt32(bytes, 8) == 1 &&
-            BitConverter.ToInt16(bytes, 12) == 1 && BitConverter.ToInt16(bytes, 14) == 32;
+            BitConverter.ToInt16(bytes, 12) == 1 && BitConverter.ToInt16(bytes, 14) == expectedBitCount;
     }
 
     static byte[] CreateFileDrop()

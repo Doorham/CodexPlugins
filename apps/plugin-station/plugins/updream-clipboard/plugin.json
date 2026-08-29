@@ -1,9 +1,9 @@
 {
   "id": "updream-clipboard-cleaner",
   "name": "Updream 剪贴板清理",
-  "moduleVersion": "1.0.3",
+  "moduleVersion": "1.0.4",
   "developers": ["Doorham", "XY", "Althy"],
-  "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。复制画布时仅保留可粘贴的原始图片格式。",
+  "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。复制画布时转换为 Photoshop 可安全读取的标准图片格式。",
   "category": "剪贴板",
   "icon": "▣",
   "accent": "#22c55e",

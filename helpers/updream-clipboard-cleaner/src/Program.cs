@@ -77,47 +77,37 @@ namespace CompanyAIHelpers.UpdreamClipboardCleaner
             if (!TryGetRealPng(out pngFormat, out pngBytes)) return;
             if (!HasCanvasNodesJson()) return;
 
-            // Preserve the original PNG bytes exactly. Many paste targets do not
-            // understand the registered PNG format and require derived
-            // CF_DIB/CF_DIBV5/CF_BITMAP, even though all represent the same image.
+            // Convert the Updream composite clipboard into one conservative
+            // standard bitmap format. Photoshop inspects every advertised image
+            // representation as soon as it gains focus; merely placing CF_DIB
+            // before the registered PNG is therefore insufficient when the PNG
+            // importer rejects that payload.
             byte[] dibBytes = ReadGlobalBytes(CF_DIB, 256 * 1024 * 1024);
-            byte[] dibV5Bytes = ReadGlobalBytes(CF_DIBV5, 256 * 1024 * 1024);
             try
             {
                 byte[] generatedDib;
-                byte[] generatedDibV5;
-                CreateDibPayloads(pngBytes, out generatedDib, out generatedDibV5);
+                byte[] ignoredDibV5;
+                CreateDibPayloads(pngBytes, out generatedDib, out ignoredDibV5);
                 dibBytes = generatedDib;
-                dibV5Bytes = generatedDibV5;
             }
             catch
             {
-                // Keep any source-provided compatibility formats and preserve the exact
-                // PNG if an unusual but structurally valid image cannot be decoded.
+                // Fall back only to a source-provided CF_DIB. Re-exposing the
+                // registered PNG would reproduce the Photoshop focus-time error.
             }
-            IntPtr sourceBitmap = GetClipboardData(CF_BITMAP);
-            IntPtr bitmapCopy = sourceBitmap == IntPtr.Zero ? IntPtr.Zero :
-                CopyImage(sourceBitmap, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
-
-            IntPtr pngCopy = AllocateGlobal(pngBytes);
             IntPtr dibCopy = AllocateGlobal(dibBytes);
-            IntPtr dibV5Copy = AllocateGlobal(dibV5Bytes);
-            if (pngCopy == IntPtr.Zero)
-            {
-                FreeOwnedHandles(pngCopy, dibCopy, dibV5Copy, bitmapCopy);
-                return;
-            }
+            if (dibCopy == IntPtr.Zero) return;
 
             if (!EmptyClipboard())
             {
-                FreeOwnedHandles(pngCopy, dibCopy, dibV5Copy, bitmapCopy);
+                GlobalFree(dibCopy);
                 return;
             }
-            SetOwnedClipboardData(pngFormat, ref pngCopy, false);
+            // Strict Photoshop mode: expose exactly one 24-bit CF_DIB. Do not add
+            // PNG, CF_DIBV5 or CF_BITMAP, because Photoshop probes clipboard image
+            // formats on activation even before the user invokes Paste.
             SetOwnedClipboardData(CF_DIB, ref dibCopy, false);
-            SetOwnedClipboardData(CF_DIBV5, ref dibV5Copy, false);
-            SetOwnedClipboardData(CF_BITMAP, ref bitmapCopy, true);
-            FreeOwnedHandles(pngCopy, dibCopy, dibV5Copy, bitmapCopy);
+            if (dibCopy != IntPtr.Zero) GlobalFree(dibCopy);
         }
 
         static IntPtr AllocateGlobal(byte[] bytes)
@@ -179,12 +169,30 @@ namespace CompanyAIHelpers.UpdreamClipboardCleaner
                     bitmap.UnlockBits(data);
                 }
 
-                dib = new byte[checked(40 + pixels.Length)];
-                WriteBitmapInfoHeader(dib, width, height, pixels.Length, 0);
-                Buffer.BlockCopy(pixels, 0, dib, 40, pixels.Length);
+                // Adobe applications are most reliable with the traditional
+                // 24-bit BI_RGB form of CF_DIB. A 32-bit BI_RGB payload leaves
+                // the fourth byte undefined; some Photoshop builds reject it
+                // instead of treating it as alpha.
+                int dibStride = checked(((width * 3) + 3) & ~3);
+                int dibImageBytes = checked(dibStride * height);
+                dib = new byte[checked(40 + dibImageBytes)];
+                WriteBitmapInfoHeader(dib, width, height, 24, dibImageBytes, 0);
+                for (int y = 0; y < height; y++)
+                {
+                    int sourceOffset = y * rowBytes;
+                    int destinationOffset = 40 + (y * dibStride);
+                    for (int x = 0; x < width; x++)
+                    {
+                        int sourcePixel = sourceOffset + (x * 4);
+                        int destinationPixel = destinationOffset + (x * 3);
+                        dib[destinationPixel] = pixels[sourcePixel];
+                        dib[destinationPixel + 1] = pixels[sourcePixel + 1];
+                        dib[destinationPixel + 2] = pixels[sourcePixel + 2];
+                    }
+                }
 
                 dibV5 = new byte[checked(124 + pixels.Length)];
-                WriteBitmapInfoHeader(dibV5, width, height, pixels.Length, 3);
+                WriteBitmapInfoHeader(dibV5, width, height, 32, pixels.Length, 3);
                 WriteInt32(dibV5, 0, 124);
                 WriteUInt32(dibV5, 40, 0x00FF0000);
                 WriteUInt32(dibV5, 44, 0x0000FF00);
@@ -196,13 +204,13 @@ namespace CompanyAIHelpers.UpdreamClipboardCleaner
             }
         }
 
-        static void WriteBitmapInfoHeader(byte[] destination, int width, int height, int imageBytes, int compression)
+        static void WriteBitmapInfoHeader(byte[] destination, int width, int height, short bitCount, int imageBytes, int compression)
         {
             WriteInt32(destination, 0, 40);
             WriteInt32(destination, 4, width);
             WriteInt32(destination, 8, height);
             WriteInt16(destination, 12, 1);
-            WriteInt16(destination, 14, 32);
+            WriteInt16(destination, 14, bitCount);
             WriteInt32(destination, 16, compression);
             WriteInt32(destination, 20, imageBytes);
         }
