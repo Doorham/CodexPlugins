@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import ctypes
 import csv
 import json
 import os
@@ -32,6 +31,7 @@ from .workbuddy_chime import (
     remove_workbuddy_hook,
     workbuddy_hook_status,
 )
+from .wininet_proxy import apply_proxy_bypass
 CREATE_NO_WINDOW = 0x08000000
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -205,7 +205,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.11.8",
+                "version": "0.11.9",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -902,9 +902,9 @@ class ControlService:
 
     def _proxy_action(self, plugin: dict[str, Any], action: str, payload: dict[str, Any]) -> Any:
         if action == "refresh":
-            self._ensure_proxy_override_entries(plugin)
+            _, override = self._ensure_proxy_override_entries(plugin)
             self._sync_clash_verge_bypass(plugin)
-            self._refresh_wininet()
+            self._refresh_wininet(override)
             return "Windows 与 Clash Verge 直连白名单已同步"
         if action == "list_domains":
             return {
@@ -913,8 +913,9 @@ class ControlService:
             }
         if action == "add_domain":
             domain = self._normalize_domain(str(payload.get("domain", "")))
-            entries = [domain, f"*.{domain}"]
             builtin = {item.lower() for item in plugin["domains"]}
+            domain = self._matching_builtin_domain(domain, builtin)
+            entries = [domain, f"*.{domain}"]
             with winreg.CreateKeyEx(
                 winreg.HKEY_CURRENT_USER,
                 INTERNET_SETTINGS,
@@ -927,6 +928,7 @@ class ControlService:
                 covering_domain = self._covering_wildcard(domain, seen)
                 if covering_domain:
                     self._sync_clash_verge_bypass(plugin)
+                    self._refresh_wininet(";".join(current))
                     return f"已被 {covering_domain} 的子域通配规则覆盖，无需重复添加"
                 missing = [entry for entry in entries if entry.lower() not in seen]
                 if domain in builtin:
@@ -935,12 +937,13 @@ class ControlService:
                     if missing:
                         winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, ";".join(current))
                     self._sync_clash_verge_bypass(plugin)
-                    self._refresh_wininet()
+                    self._refresh_wininet(";".join(current))
                     return "该主站属于内置白名单，已补齐缺失规则" if missing else "该主站已在内置白名单，无需重复添加"
                 records = self._load_custom_domain_records(plugin)
                 owned = records.get(domain, set())
                 if not missing:
                     self._sync_clash_verge_bypass(plugin)
+                    self._refresh_wininet(";".join(current))
                     return "该主站已在白名单，无需重复添加"
                 for entry in missing:
                     current.append(entry)
@@ -949,7 +952,7 @@ class ControlService:
             records[domain] = owned
             self._save_custom_domain_records(plugin, records)
             self._sync_clash_verge_bypass(plugin)
-            self._refresh_wininet()
+            self._refresh_wininet(";".join(current))
             if len(missing) == 2:
                 return f"添加成功：{domain} 和 *.{domain}"
             return f"已补齐缺失规则：{missing[0]}；已有规则未重复写入"
@@ -965,6 +968,7 @@ class ControlService:
                 for entry in (builtin_domain, f"*.{builtin_domain}")
             }
             removable = {entry for entry in owned if entry not in required}
+            active_override: str | None = None
             try:
                 with winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
@@ -977,12 +981,14 @@ class ControlService:
                     kept = [item for item in current if item.lower() not in removable]
                     if kept != current:
                         winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, ";".join(kept))
+                    active_override = ";".join(kept)
             except FileNotFoundError:
                 pass
             records.pop(domain, None)
             self._save_custom_domain_records(plugin, records)
             self._sync_clash_verge_bypass(plugin, remove=removable)
-            self._refresh_wininet()
+            if active_override is not None:
+                self._refresh_wininet(active_override)
             return f"已删除自定义主站：{domain}"
         if action == "open_folder":
             folder = expand_path(plugin["recordFolder"])
@@ -1001,7 +1007,7 @@ class ControlService:
         custom = records if records is not None else self._load_custom_domain_records(plugin)
         return required_bypass_entries([*plugin["domains"], *custom])
 
-    def _ensure_proxy_override_entries(self, plugin: dict[str, Any]) -> int:
+    def _ensure_proxy_override_entries(self, plugin: dict[str, Any]) -> tuple[int, str]:
         required = self._proxy_required_entries(plugin)
         with winreg.CreateKeyEx(
             winreg.HKEY_CURRENT_USER,
@@ -1015,7 +1021,7 @@ class ControlService:
             missing = [item for item in required if item.casefold() not in seen]
             if missing:
                 winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, ";".join([*current, *missing]))
-        return len(missing)
+        return len(missing), ";".join([*current, *missing])
 
     def _sync_clash_verge_bypass(
         self,
@@ -1111,6 +1117,11 @@ class ControlService:
         return None
 
     @staticmethod
+    def _matching_builtin_domain(domain: str, builtin: set[str]) -> str:
+        matches = [item for item in builtin if domain == item or domain.endswith(f".{item}")]
+        return max(matches, key=len, default=domain)
+
+    @staticmethod
     def _normalize_domain(value: str) -> str:
         value = value.strip()
         if not value:
@@ -1130,9 +1141,5 @@ class ControlService:
         return host
 
     @staticmethod
-    def _refresh_wininet() -> None:
-        wininet = ctypes.WinDLL("wininet", use_last_error=True)
-        changed = wininet.InternetSetOptionW(None, 39, None, 0)
-        refreshed = wininet.InternetSetOptionW(None, 37, None, 0)
-        if not (changed and refreshed):
-            raise ctypes.WinError(ctypes.get_last_error())
+    def _refresh_wininet(value: str) -> None:
+        apply_proxy_bypass(value)

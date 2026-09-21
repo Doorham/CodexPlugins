@@ -28,8 +28,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
         software = json.loads(SOFTWARE_MANIFEST.read_text(encoding="utf-8"))
         codex = json.loads(CODEX_MANIFEST.read_text(encoding="utf-8"))
 
-        self.assertEqual(software["moduleVersion"], "1.1.0")
-        self.assertEqual(codex["moduleVersion"], "1.1.0")
+        self.assertEqual(software["moduleVersion"], "1.2.0")
+        self.assertEqual(codex["moduleVersion"], "1.2.0")
         self.assertEqual(software["executable"], codex["executable"])
         self.assertEqual(software["installSource"], codex["installSource"])
         self.assertEqual(software["processName"], "EnvironmentDetector.exe")
@@ -44,8 +44,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
     def test_release_index_lists_both_public_modules(self) -> None:
         release = json.loads((ROOT / "ONLINE-RELEASE.json").read_text(encoding="utf-8"))
         versions = {item["id"]: item["version"] for item in release["modules"]}
-        self.assertEqual(versions["software-environment-checker"], "1.1.0")
-        self.assertEqual(versions["codex-environment-helper"], "1.1.0")
+        self.assertEqual(versions["software-environment-checker"], "1.2.0")
+        self.assertEqual(versions["codex-environment-helper"], "1.2.0")
 
     def test_process_handler_passes_reviewed_start_arguments_without_shell(self) -> None:
         service = object.__new__(ControlService)
@@ -71,6 +71,16 @@ class EnvironmentDetectorTests(unittest.TestCase):
         self.assertNotIn("C:\\Users\\", source)
         self.assertNotIn("Y:\\", source)
         self.assertNotIn("仅保存在此电脑", source)
+
+    def test_libreoffice_is_a_codex_completion_item_with_safe_path_repair(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn('public const string LibreOfficeName = "LibreOffice（无头渲染）"', source)
+        self.assertIn('results.Add(CheckLibreOffice())', source)
+        self.assertIn('"TheDocumentFoundation.LibreOffice"', source)
+        self.assertIn('UserPathEnvironment.EnsureDirectory(Path.GetDirectoryName(executable))', source)
+        self.assertIn('未主动修改 Windows 默认文件关联', source)
+        self.assertIn('"文档处理能力", LibreOfficeName', source)
+        self.assertIn('正在检测 8 项可补全环境', source)
 
     def test_utf8_code_page_changes_have_backup_and_two_way_rollback(self) -> None:
         source = SOURCE.read_text(encoding="utf-8")
@@ -190,10 +200,17 @@ class EnvironmentDetectorTests(unittest.TestCase):
             self.assertIn("PYTHON_MISSING=PASS", scenario_text)
             self.assertIn("INTEGRATION_MISSING=PASS", scenario_text)
             self.assertIn("WINGET_MISSING=PASS", scenario_text)
+            self.assertIn("LIBREOFFICE_MISSING=PASS", scenario_text)
+            self.assertIn("LIBREOFFICE_PATH_MISSING=PASS", scenario_text)
+            self.assertIn("LIBREOFFICE_READY=PASS", scenario_text)
             self.assertIn("UTF8_BACKUP_FORMAT=PASS", scenario_text)
             self.assertIn("SYSTEM_CHANGES=0", scenario_text)
-            self.assertIn("软件安装检查 v1.1.0", software_report.read_text(encoding="utf-8"))
-            self.assertIn("Codex 环境补全 v1.1.0", codex_report.read_text(encoding="utf-8"))
+            software_text = software_report.read_text(encoding="utf-8")
+            self.assertIn("软件安装检查 v1.2.0", software_text)
+            self.assertNotIn("LibreOffice（无头渲染）", software_text)
+            codex_text = codex_report.read_text(encoding="utf-8")
+            self.assertIn("Codex 环境补全 v1.2.0", codex_text)
+            self.assertIn("LibreOffice（无头渲染）", codex_text)
 
 
 if __name__ == "__main__":

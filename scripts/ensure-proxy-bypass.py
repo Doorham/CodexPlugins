@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ctypes
 import json
 import os
 import sys
@@ -13,6 +12,7 @@ APP_ROOT = REPO_ROOT / "apps" / "plugin-station"
 sys.path.insert(0, str(APP_ROOT))
 
 from core.clash_verge_bypass import required_bypass_entries, sync_clash_verge_bypass  # noqa: E402
+from core.wininet_proxy import apply_proxy_bypass  # noqa: E402
 
 
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -26,12 +26,6 @@ def _custom_domains(record_folder: Path) -> list[str]:
     domains = [str(item.get("domain", "")).strip().lower() for item in raw.get("items", []) if isinstance(item, dict)]
     domains.extend(str(item).strip().lower() for item in raw.get("domains", []))
     return [item for item in domains if item]
-
-
-def _refresh_wininet() -> None:
-    wininet = ctypes.windll.wininet
-    wininet.InternetSetOptionW(None, 39, None, 0)
-    wininet.InternetSetOptionW(None, 37, None, 0)
 
 
 def main() -> int:
@@ -64,8 +58,8 @@ def main() -> int:
         [*current, *missing],
         backup_root=record_folder / "Backups",
     )
-    if missing:
-        _refresh_wininet()
+    merged_override = ";".join([*current, *missing])
+    apply_proxy_bypass(merged_override)
     print(json.dumps({
         "ok": True,
         "registryAdded": len(missing),

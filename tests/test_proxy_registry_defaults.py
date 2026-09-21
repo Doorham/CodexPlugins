@@ -68,6 +68,38 @@ class ProxyRegistryDefaultsTests(unittest.TestCase):
         self.assertEqual(set_value.call_args.args[1], "ProxyOverride")
         self.assertEqual(set_value.call_args.args[4], "new.example;*.new.example")
 
+    def test_add_domain_collapses_known_subdomain_to_builtin_main_domain(self) -> None:
+        self.plugin = {"domains": ["taobao.com", "163.com"]}
+        set_value = MagicMock()
+        with (
+            patch.object(control.winreg, "CreateKeyEx", return_value=DummyKey()),
+            patch.object(control.winreg, "QueryValueEx", side_effect=FileNotFoundError),
+            patch.object(control.winreg, "SetValueEx", set_value),
+            patch.object(self.service, "_sync_clash_verge_bypass"),
+            patch.object(self.service, "_refresh_wininet"),
+        ):
+            message = self.service._proxy_action(
+                self.plugin,
+                "add_domain",
+                {"domain": "https://item.taobao.com/item.htm?id=123"},
+            )
+
+        self.assertEqual(message, "该主站属于内置白名单，已补齐缺失规则")
+        set_value.assert_called_once()
+        self.assertEqual(set_value.call_args.args[4], "taobao.com;*.taobao.com")
+
+    def test_matching_builtin_domain_keeps_unknown_subdomain_precise(self) -> None:
+        builtin = {"taobao.com", "163.com"}
+
+        self.assertEqual(
+            self.service._matching_builtin_domain("avmsact8.cc.163.com", builtin),
+            "163.com",
+        )
+        self.assertEqual(
+            self.service._matching_builtin_domain("tenant.example.net", builtin),
+            "tenant.example.net",
+        )
+
     def test_delete_domain_does_not_create_an_absent_override_value(self) -> None:
         records = {"new.example": {"new.example", "*.new.example"}}
         save_records = MagicMock()

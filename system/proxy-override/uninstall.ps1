@@ -9,14 +9,6 @@ $removeSet = [System.Collections.Generic.HashSet[string]]::new([System.StringCom
 foreach ($entry in $record.AddedEntries) { [void]$removeSet.Add([string]$entry) }
 $kept = @($current -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $removeSet.Contains($_) })
 Set-ItemProperty -LiteralPath $regPath -Name ProxyOverride -Type String -Value ($kept -join ';')
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class WinInetRefreshUninstall {
-  [DllImport("wininet.dll", SetLastError=true)]
-  public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
-}
-'@
-[void][WinInetRefreshUninstall]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-[void][WinInetRefreshUninstall]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+Add-Type -Path (Join-Path $PSScriptRoot 'WinInetProxyBypass.cs')
+[WinInetProxyBypass]::Apply(($kept -join ';'))
 Write-Output "Removed $($removeSet.Count) entries recorded from this installation; preserved all other current entries."

@@ -5,7 +5,9 @@ $domains = @(
   'bilibili.com','bilivideo.com','hdslb.com','biliapi.net','biliapi.com','bilicdn1.com','biligame.com',
   'weixin.qq.com','wechat.com','servicewechat.com','wechatapp.com','weixinbridge.com','weixinstatic.com','qpic.cn','qlogo.cn','gtimg.com','finder.video.qq.com','wxapp.tc.qq.com','res.wx.qq.com','weixin110.qq.com','wechatpay.com','tenpay.com',
   'douyin.com','douyinstatic.com','douyinpic.com','douyinvod.com','douyincdn.com','byteimg.com','bytecdn.cn','bytecdn.com','bytedance.com','bytedanceapi.com','bytedns.com','bytedns1.com','bytetcc.com','bytegoofy.com','ibytedtos.com','pstatp.com','snssdk.com','toutiaoapi.com','zijieapi.com','amemv.com','bdurl.net','volces.com','volcengine.com','queniuso.com',
-  'xiaoheihe.cn','max-c.com','maxjia.com','360.cn','360safe.com','360tpcdn.com'
+  'xiaoheihe.cn','max-c.com','maxjia.com','360.cn','360safe.com','360tpcdn.com','taobao.com','163.com',
+  '126.com','126.net','127.net','yeah.net','bdstatic.com','bdimg.com','bcebos.com',
+  'battle.net','blizzard.com','battlenet.com.cn','blizzard.cn','blzstatic.com','blzstatic.cn','netease.com','blzddist1-a.akamaihd.net'
 )
 
 $requested = [System.Collections.Generic.List[string]]::new()
@@ -38,16 +40,10 @@ Set-Content -LiteralPath $backupPath -Value $oldValue -Encoding UTF8
 
 Set-ItemProperty -LiteralPath $regPath -Name ProxyOverride -Type String -Value $newValue
 
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class WinInetRefresh {
-  [DllImport("wininet.dll", SetLastError=true)]
-  public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
-}
-'@
-$settingsChanged = [WinInetRefresh]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-$refreshed = [WinInetRefresh]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+Add-Type -Path (Join-Path $PSScriptRoot 'WinInetProxyBypass.cs')
+[WinInetProxyBypass]::Apply($newValue)
+$settingsChanged = $true
+$refreshed = $true
 
 $record = [ordered]@{
   InstalledAt = (Get-Date).ToString('o')

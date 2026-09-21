@@ -75,6 +75,7 @@ namespace EnvironmentDetector
 
     internal static class Detector
     {
+        public const string LibreOfficeName = "LibreOffice（无头渲染）";
         private static readonly List<string> CleanPathDirectories = BuildCleanPathDirectories();
 
         public static List<CheckResult> ScanAll()
@@ -93,6 +94,7 @@ namespace EnvironmentDetector
             results.Add(CheckDevelopmentIntegration(python, vsCode, cursor, pyCharm, visualStudio));
             results.Add(CheckGit());
             results.Add(CheckFfmpeg());
+            results.Add(CheckLibreOffice());
             results.Add(CheckPyYaml(python));
             results.Add(CheckYtDlp(python));
             return results;
@@ -559,6 +561,70 @@ namespace EnvironmentDetector
                 "可在本工具中一键安装完整的 FFmpeg 套件。");
         }
 
+        private static CheckResult CheckLibreOffice()
+        {
+            string executable = FindLibreOfficeExecutable();
+            if (String.IsNullOrEmpty(executable))
+                return EvaluateLibreOfficeState(null, false, false, null);
+
+            CommandResult versionRun = Run(executable, "--headless --version", 30000);
+            string programDirectory = Path.GetDirectoryName(executable);
+            bool pathReady = IsDirectoryOnConfiguredPath(programDirectory);
+            return EvaluateLibreOfficeState(executable, versionRun.ExitCode == 0, pathReady,
+                FirstLine(versionRun.Output));
+        }
+
+        private static CheckResult EvaluateLibreOfficeState(string executable, bool commandReady, bool pathReady, string version)
+        {
+            if (String.IsNullOrEmpty(executable))
+                return Missing("文档处理能力", LibreOfficeName,
+                    "没有发现 LibreOffice 的 soffice.com。",
+                    "可在本工具中一键安装 LibreOffice，并配置无头文档渲染命令。");
+
+            string detail = EmptyAsUnknown(version) + " · " + executable;
+            if (!commandReady)
+                return Warning("文档处理能力", LibreOfficeName,
+                    detail + "；程序存在，但无头命令测试失败。",
+                    "可在本工具中尝试重新安装 LibreOffice，并重新验证无头渲染能力。");
+            if (!pathReady)
+                return Warning("文档处理能力", LibreOfficeName,
+                    detail + "；无头命令可运行，但 LibreOffice program 目录尚未加入 PATH。",
+                    "可在本工具中一键补全当前用户 PATH；不会主动修改 Windows 默认文件关联。");
+            return Ready("文档处理能力", LibreOfficeName,
+                detail + "；无头命令实测通过，PATH 已配置。", "无需处理。");
+        }
+
+        public static CheckResult EvaluateLibreOfficeForSelfTest(bool installed, bool commandReady, bool pathReady)
+        {
+            return EvaluateLibreOfficeState(installed ? "mock-soffice.com" : null,
+                commandReady, pathReady, installed ? "LibreOffice 26.8.0.3" : null);
+        }
+
+        public static string FindLibreOfficeExecutable()
+        {
+            List<string> candidates = FindExecutables("soffice.com");
+            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            AddIfFile(candidates, Path.Combine(programFiles, "LibreOffice", "program", "soffice.com"));
+            AddIfFile(candidates, Path.Combine(programFilesX86, "LibreOffice", "program", "soffice.com"));
+            AddIfFile(candidates, Path.Combine(local, "Programs", "LibreOffice", "program", "soffice.com"));
+            return DistinctPaths(candidates).FirstOrDefault(path => !IsCodexRuntime(path));
+        }
+
+        public static bool IsDirectoryOnConfiguredPath(string directory)
+        {
+            if (String.IsNullOrWhiteSpace(directory)) return false;
+            string target;
+            try { target = Path.GetFullPath(directory).TrimEnd('\\'); }
+            catch { return false; }
+            return BuildCleanPathDirectories().Any(path =>
+            {
+                try { return String.Equals(Path.GetFullPath(path).TrimEnd('\\'), target, StringComparison.OrdinalIgnoreCase); }
+                catch { return false; }
+            });
+        }
+
         private static CheckResult CheckPyYaml(PythonProbe python)
         {
             if (!python.Available)
@@ -903,6 +969,77 @@ namespace EnvironmentDetector
         }
     }
 
+    internal static class UserPathEnvironment
+    {
+        private static readonly IntPtr BroadcastHandle = new IntPtr(0xffff);
+        private const uint SettingChange = 0x001A;
+        private const uint AbortIfHung = 0x0002;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr word,
+            string text, uint flags, uint timeout, out UIntPtr result);
+
+        public static bool EnsureDirectory(string directory)
+        {
+            string target = Normalize(directory);
+            if (String.IsNullOrEmpty(target) || !Directory.Exists(target))
+                throw new DirectoryNotFoundException("LibreOffice program 目录不存在。");
+
+            string rawUserPath;
+            using (RegistryKey environment = Registry.CurrentUser.CreateSubKey("Environment"))
+            {
+                if (environment == null) throw new InvalidOperationException("无法打开当前用户环境变量。");
+                rawUserPath = Convert.ToString(environment.GetValue("Path", "", RegistryValueOptions.DoNotExpandEnvironmentNames));
+                if (Contains(rawUserPath, target))
+                {
+                    EnsureProcessPath(target);
+                    return false;
+                }
+                string updated = String.IsNullOrWhiteSpace(rawUserPath)
+                    ? target
+                    : rawUserPath.TrimEnd().TrimEnd(';') + ";" + target;
+                environment.SetValue("Path", updated, RegistryValueKind.ExpandString);
+            }
+
+            EnsureProcessPath(target);
+            try
+            {
+                UIntPtr ignored;
+                SendMessageTimeout(BroadcastHandle, SettingChange, UIntPtr.Zero, "Environment",
+                    AbortIfHung, 3000, out ignored);
+            }
+            catch { }
+            return true;
+        }
+
+        private static void EnsureProcessPath(string directory)
+        {
+            string current = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Process) ?? "";
+            if (!Contains(current, directory))
+                Environment.SetEnvironmentVariable("Path", String.IsNullOrWhiteSpace(current)
+                        ? directory
+                        : current.TrimEnd().TrimEnd(';') + ";" + directory,
+                    EnvironmentVariableTarget.Process);
+        }
+
+        private static bool Contains(string pathValue, string directory)
+        {
+            foreach (string entry in (pathValue ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string normalized = Normalize(Environment.ExpandEnvironmentVariables(entry.Trim().Trim('"')));
+                if (String.Equals(normalized, directory, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        private static string Normalize(string directory)
+        {
+            if (String.IsNullOrWhiteSpace(directory)) return null;
+            try { return Path.GetFullPath(directory).TrimEnd('\\'); }
+            catch { return null; }
+        }
+    }
+
     internal static class RepairEngine
     {
         private static readonly Dictionary<string, string> WingetPackages = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -910,13 +1047,18 @@ namespace EnvironmentDetector
             { "PowerShell 7", "Microsoft.PowerShell" },
             { "Windows Terminal", "Microsoft.WindowsTerminal" },
             { "Git", "Git.Git" },
-            { "FFmpeg（含 FFprobe）", "Gyan.FFmpeg" }
+            { "FFmpeg（含 FFprobe）", "Gyan.FFmpeg" },
+            { Detector.LibreOfficeName, "TheDocumentFoundation.LibreOffice" }
         };
 
         public static List<string> GetAutomaticItems(IEnumerable<CheckResult> results)
         {
-            HashSet<string> names = new HashSet<string>(results.Where(item => item.Level != CheckLevel.Ready).Select(item => item.Name), StringComparer.OrdinalIgnoreCase);
-            return names.Where(name => WingetPackages.ContainsKey(name) || name == "PyYAML" || name == "yt-dlp" || name == "UTF-8 全球语言支持").ToList();
+            return results.Where(item => item.Level != CheckLevel.Ready)
+                .Select(item => item.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(name => WingetPackages.ContainsKey(name) || name == "PyYAML" ||
+                    name == "yt-dlp" || name == "UTF-8 全球语言支持")
+                .ToList();
         }
 
         public static List<RepairResult> Repair(IEnumerable<CheckResult> results, Action<string, int, int> progress)
@@ -932,6 +1074,11 @@ namespace EnvironmentDetector
                 if (name == "UTF-8 全球语言支持")
                     continue;
                 if (progress != null) progress(name, index + 1, targets.Count);
+                if (name == Detector.LibreOfficeName)
+                {
+                    repaired.Add(RepairLibreOffice(winget));
+                    continue;
+                }
                 RepairResult prerequisiteFailure = GetPrerequisiteFailure(name, winget, python);
                 if (prerequisiteFailure != null)
                 {
@@ -954,6 +1101,53 @@ namespace EnvironmentDetector
                 repaired.Add(FromCommand(name, pip));
             }
             return repaired;
+        }
+
+        private static RepairResult RepairLibreOffice(string winget)
+        {
+            string executable = Detector.FindLibreOfficeExecutable();
+            bool installedNow = false;
+            if (String.IsNullOrEmpty(executable))
+            {
+                if (String.IsNullOrEmpty(winget))
+                    return Failed(Detector.LibreOfficeName, "系统未发现 winget，无法自动安装。");
+                CommandResult install = Detector.RunRepairCommand(winget,
+                    "install --id TheDocumentFoundation.LibreOffice --exact --accept-source-agreements --accept-package-agreements --silent");
+                if (install.ExitCode != 0) return FromCommand(Detector.LibreOfficeName, install);
+                installedNow = true;
+                executable = Detector.FindLibreOfficeExecutable();
+            }
+
+            if (String.IsNullOrEmpty(executable))
+                return Failed(Detector.LibreOfficeName, "安装命令已结束，但仍没有发现 soffice.com。");
+
+            CommandResult version = Detector.RunRepairCommand(executable, "--headless --version");
+            if (version.ExitCode != 0 && !String.IsNullOrEmpty(winget))
+            {
+                CommandResult reinstall = Detector.RunRepairCommand(winget,
+                    "install --id TheDocumentFoundation.LibreOffice --exact --force --accept-source-agreements --accept-package-agreements --silent");
+                if (reinstall.ExitCode != 0) return FromCommand(Detector.LibreOfficeName, reinstall);
+                installedNow = true;
+                executable = Detector.FindLibreOfficeExecutable();
+                if (!String.IsNullOrEmpty(executable))
+                    version = Detector.RunRepairCommand(executable, "--headless --version");
+            }
+            if (version.ExitCode != 0)
+                return Failed(Detector.LibreOfficeName,
+                    "LibreOffice 已发现，但无头命令测试失败：" + Compact(version.Output));
+
+            try
+            {
+                bool pathChanged = UserPathEnvironment.EnsureDirectory(Path.GetDirectoryName(executable));
+                string action = installedNow ? "已安装或修复 LibreOffice" : "LibreOffice 已安装";
+                action += pathChanged ? "，并已加入当前用户 PATH。" : "，当前用户 PATH 已配置。";
+                action += " 工具未主动修改 Windows 默认文件关联。";
+                return new RepairResult { Name = Detector.LibreOfficeName, Success = true, Detail = action };
+            }
+            catch (Exception ex)
+            {
+                return Failed(Detector.LibreOfficeName, "无头命令可运行，但 PATH 配置失败：" + ex.Message);
+            }
         }
 
         private static RepairResult GetPrerequisiteFailure(string name, string winget, PythonProbe python)
@@ -1305,6 +1499,10 @@ namespace EnvironmentDetector
             record("INTEGRATION_WITHOUT_PYTHON", Detector.EvaluateIntegrationForSelfTest(missingPython, true).Level == CheckLevel.Missing);
             record("INTEGRATION_MISSING", Detector.EvaluateIntegrationForSelfTest(readyPython, false).Level == CheckLevel.Missing);
             record("INTEGRATION_READY", Detector.EvaluateIntegrationForSelfTest(readyPython, true).Level == CheckLevel.Ready);
+            record("LIBREOFFICE_MISSING", Detector.EvaluateLibreOfficeForSelfTest(false, false, false).Level == CheckLevel.Missing);
+            record("LIBREOFFICE_COMMAND_BROKEN", Detector.EvaluateLibreOfficeForSelfTest(true, false, true).Level == CheckLevel.Warning);
+            record("LIBREOFFICE_PATH_MISSING", Detector.EvaluateLibreOfficeForSelfTest(true, true, false).Level == CheckLevel.Warning);
+            record("LIBREOFFICE_READY", Detector.EvaluateLibreOfficeForSelfTest(true, true, true).Level == CheckLevel.Ready);
             record("WINGET_MISSING", RepairEngine.EvaluatePrerequisiteForSelfTest("Git", false, true) != null);
             record("PYTHON_FOR_PACKAGE_MISSING", RepairEngine.EvaluatePrerequisiteForSelfTest("PyYAML", true, false) != null);
             record("REPAIR_PREREQUISITES_READY", RepairEngine.EvaluatePrerequisiteForSelfTest("Git", true, true) == null);
@@ -1921,10 +2119,10 @@ namespace EnvironmentDetector
                 repairButton.BackColor = Color.FromArgb(51, 65, 85);
             }
             summary.ForeColor = Color.FromArgb(96, 165, 250);
-            summary.Text = codexMode ? "正在检测 7 项可补全环境…" : "正在检测 3 项软件与集成环境…";
+            summary.Text = codexMode ? "正在检测 8 项可补全环境…" : "正在检测 3 项软件与集成环境…";
             resultsPanel.Controls.Clear();
             StartBusyPresentation(codexMode ? "正在检测可补全环境" : "正在检查软件与集成", 0, "检测中");
-            SetBusyProgress(codexMode ? "检查 7 项可补全环境" : "检查 3 项软件与集成环境", 0, 0);
+            SetBusyProgress(codexMode ? "检查 8 项可补全环境" : "检查 3 项软件与集成环境", 0, 0);
             try
             {
                 List<CheckResult> allResults = await Task.Run(() => Detector.ScanAll());
@@ -2062,6 +2260,7 @@ namespace EnvironmentDetector
                 "PowerShell 7",
                 "Git for Windows",
                 "FFmpeg（含 FFprobe）",
+                "LibreOffice（无头渲染）",
                 "PyYAML 与 yt-dlp"
             };
             backgroundOperationRunning = true;
@@ -2270,7 +2469,7 @@ namespace EnvironmentDetector
         public static string Build(IEnumerable<CheckResult> results, bool codexMode)
         {
             StringBuilder report = new StringBuilder();
-            report.AppendLine(codexMode ? "Codex 环境补全 v1.1.0" : "软件安装检查 v1.1.0");
+            report.AppendLine(codexMode ? "Codex 环境补全 v1.2.0" : "软件安装检查 v1.2.0");
             report.AppendLine("检测时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine(codexMode
                 ? "范围：可由本工具自行安装或配置的环境"
