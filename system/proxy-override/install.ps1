@@ -6,7 +6,7 @@ $domains = @(
   'weixin.qq.com','wechat.com','servicewechat.com','wechatapp.com','weixinbridge.com','weixinstatic.com','qpic.cn','qlogo.cn','gtimg.com','finder.video.qq.com','wxapp.tc.qq.com','res.wx.qq.com','weixin110.qq.com','wechatpay.com','tenpay.com',
   'douyin.com','douyinstatic.com','douyinpic.com','douyinvod.com','douyincdn.com','byteimg.com','bytecdn.cn','bytecdn.com','bytedance.com','bytedanceapi.com','bytedns.com','bytedns1.com','bytetcc.com','bytegoofy.com','ibytedtos.com','pstatp.com','snssdk.com','toutiaoapi.com','zijieapi.com','amemv.com','bdurl.net','volces.com','volcengine.com','queniuso.com',
   'xiaoheihe.cn','max-c.com','maxjia.com','360.cn','360safe.com','360tpcdn.com','taobao.com','163.com',
-  '126.com','126.net','127.net','yeah.net','bdstatic.com','bdimg.com','bcebos.com',
+  '126.com','126.net','127.net','yeah.net','bdstatic.com','bdimg.com','bcebos.com','b23.tv',
   'battle.net','blizzard.com','battlenet.com.cn','blizzard.cn','blzstatic.com','blzstatic.cn','netease.com','blzddist1-a.akamaihd.net'
 )
 
