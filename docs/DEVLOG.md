@@ -9,6 +9,13 @@
 
 ## 变更记录
 
+### 2026-09-22 · v0.12.1 · 淘宝与天猫并行资源完整直连 · Doorham / Althy
+
+- “国内网站直连”升级至 `1.2.6`，加入淘宝和天猫实际并行加载的 `alicdn.com`、`tmall.com`、`tmall.hk`、`tmallglobal.com`、`mmstat.com`、`aliapp.org`、`alipay.com`、`tanx.com`。
+- 阿里云风控与阿里诊断链只加入 `cf.aliyun.com`、`fourier.alibaba.com`、`tdum.alibaba.com`，不将整个阿里云或阿里巴巴国际站根域无差别直连。
+- 无界面 Chrome 的真实网络日志确认页面会同时请求上述主机；代表请求中，天猫、AliApp 与 Tanx 经当前 Clash 出现 TLS 失败，AliCDN 代理延迟约为直连的十几至二十多倍。
+- Google 浏览器后台、第三方 `mediav.com`、外链商家站和只作为导航入口出现的飞猪未纳入白名单。
+
 ### 2026-09-22 · v0.12.0 · 双发行线统一与 B 站短链直连 · Doorham / Althy
 
 - GitHub 网络版与公司/Y 盘版从本次起统一使用 `0.12.0` 用户可见版本号，避免不同更新源采用独立编号造成“更新后仍是旧版”的误解。

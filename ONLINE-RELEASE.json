@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "license": "Apache-2.0",
   "developers": ["Doorham", "XY", "Althy"],
   "update": {
@@ -13,7 +13,7 @@
   },
   "modules": [
     {"id": "codex-system-proxy", "version": "1.1.0", "developers": ["Althy"]},
-    {"id": "cn-proxy-bypass", "version": "1.2.5", "developers": ["Doorham", "Althy"]},
+    {"id": "cn-proxy-bypass", "version": "1.2.6", "developers": ["Doorham", "Althy"]},
     {"id": "updream-clipboard-cleaner", "version": "1.0.4", "developers": ["Doorham", "XY", "Althy"]},
     {"id": "codex-answer-chime", "version": "1.1.0", "developers": ["Doorham", "Althy"]},
     {"id": "arctis-nova-5-battery", "version": "1.0.2", "developers": ["Doorham"]},

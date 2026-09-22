@@ -1,7 +1,7 @@
 {
   "id": "cn-proxy-bypass",
   "name": "国内网站直连",
-  "moduleVersion": "1.2.5",
+  "moduleVersion": "1.2.6",
   "developers": ["Doorham", "Althy"],
   "description": "同时兼容 Aurora 与 Clash Verge Rev，让指定国内网站和应用服务直接连接。白名单会持久写入 Clash 的系统代理绕过配置，订阅更新和代理重启不会将其清除。",
   "category": "网络",
@@ -34,6 +34,8 @@
     "volces.com", "volcengine.com", "queniuso.com", "xiaoheihe.cn", "max-c.com",
     "maxjia.com", "360.cn", "360safe.com", "360tpcdn.com", "taobao.com", "163.com",
     "126.com", "126.net", "127.net", "yeah.net", "bdstatic.com", "bdimg.com", "bcebos.com", "b23.tv",
+    "alicdn.com", "tmall.com", "tmall.hk", "tmallglobal.com", "mmstat.com", "aliapp.org", "alipay.com", "tanx.com",
+    "cf.aliyun.com", "fourier.alibaba.com", "tdum.alibaba.com",
     "battle.net", "blizzard.com", "battlenet.com.cn", "blizzard.cn", "blzstatic.com",
     "blzstatic.cn", "netease.com", "blzddist1-a.akamaihd.net"
   ],

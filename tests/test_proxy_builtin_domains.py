@@ -30,6 +30,17 @@ EXPECTED_DOMAINS = {
     "bdimg.com",
     "bcebos.com",
     "b23.tv",
+    "alicdn.com",
+    "tmall.com",
+    "tmall.hk",
+    "tmallglobal.com",
+    "mmstat.com",
+    "aliapp.org",
+    "alipay.com",
+    "tanx.com",
+    "cf.aliyun.com",
+    "fourier.alibaba.com",
+    "tdum.alibaba.com",
     "battle.net",
     "blizzard.com",
     "battlenet.com.cn",
@@ -54,7 +65,7 @@ class ProxyBuiltinDomainTests(unittest.TestCase):
         self.assertEqual(len(domains), len(set(domains)))
 
     def test_manifest_and_module_index_agree(self) -> None:
-        self.assertEqual(self.manifest["moduleVersion"], "1.2.5")
+        self.assertEqual(self.manifest["moduleVersion"], "1.2.6")
         self.assertEqual(self.module["version"], self.manifest["moduleVersion"])
         self.assertEqual(self.module["developers"], self.manifest["developers"])
         self.assertIn("Doorham", self.manifest["developers"])
