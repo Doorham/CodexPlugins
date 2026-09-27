@@ -6,6 +6,7 @@
 
 | 插件 | 解决的问题 | 主要特点 |
 | --- | --- | --- |
+| UpdreamBridge 图片生成 | 在 Codex 中调用 UpDream 生图 | 内置 Agent 动作、登录配置和分步指引；支持文字、参考图及悠船 Midjourney，不依赖独立 Skill |
 | Codex 对话 timeout 修复 | Codex 首次建立 Responses WebSocket 时未正确使用 Windows 系统代理 | 仅在缺少配置时修正，已配置后独立检测握手，不把线路异常误报为配置问题 |
 | 国内网站直连 | 开启系统代理后，常用国内网站出现不必要的绕路 | 管理 Windows 直连规则，可与 Clash Verge Rev 的绕过项安全同步 |
 | Updream 剪贴板清理 | 从 Updream 画布复制的图片会让 Photoshop 获得焦点时直接报错 | 仅发布一个标准 24 位位图格式，避免 Photoshop 主动探测不兼容表示，不保存剪贴板历史 |
@@ -30,6 +31,7 @@
 - Python 3.11 或更高版本
 - Git for Windows
 - Microsoft Edge WebView2 Runtime（Windows 通常已预装）
+- 使用 UpdreamBridge 配置窗口还需 .NET 8 桌面运行时；从源码构建该窗口需 .NET SDK 8 或更高版本
 - 能访问 GitHub 和 Python 包索引的网络
 
 ## 安装

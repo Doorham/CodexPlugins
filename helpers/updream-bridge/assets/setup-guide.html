@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UpdreamBridge 首次配置</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 1100px; height: 1780px; overflow: hidden; }
+    body { background: #f3f6fc; color: #15243d; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
+    .page { width: 1100px; height: 1780px; padding: 52px 62px; }
+    .eyebrow { color: #4656d9; font-size: 19px; font-weight: 700; letter-spacing: 2px; }
+    h1 { font-size: 42px; line-height: 1.2; margin: 12px 0 10px; }
+    .sub { font-size: 20px; color: #536078; margin: 0 0 31px; }
+    .card { background: white; border: 1px solid #e1e7f2; border-radius: 22px; box-shadow: 0 8px 30px #26395c0a; }
+    .head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+    .number { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #4656d9; color: white; font-size: 21px; font-weight: 700; flex: none; }
+    .head b { font-size: 22px; }
+    .head small { margin-left: auto; font-size: 16px; color: #67748c; }
+    .first { padding: 28px; height: 510px; }
+    .first p, .step p { margin: 0; color: #45536b; font-size: 18px; line-height: 1.55; }
+    .browser { margin-top: 20px; border: 2px solid #d9e1ee; border-radius: 13px; overflow: hidden; }
+    .toolbar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #edf1f7; font-size: 14px; color: #67748c; }
+    .dot { width: 10px; height: 10px; background: #aab5c5; border-radius: 50%; }
+    .address { flex: 1; margin-left: 12px; background: white; border-radius: 7px; padding: 7px 12px; color: #536078; }
+    .canvas { height: 105px; padding: 18px 22px; background: linear-gradient(100deg, #f7f0e8, #e9ecfa); position: relative; }
+    .canvas::before { content: "UpDream 画布"; font-weight: 700; font-size: 16px; }
+    .canvas::after { content: "按 F12 打开开发者工具 ↓"; position: absolute; right: 19px; bottom: 16px; background: white; color: #364ac6; border-radius: 8px; padding: 8px 13px; font-weight: 700; }
+    .devtools { height: 202px; background: #202833; color: #e9eef7; }
+    .tabs { display: flex; gap: 25px; align-items: center; border-bottom: 1px solid #485362; padding: 0 20px; height: 50px; font-family: "Segoe UI", sans-serif; font-size: 17px; }
+    .tab { height: 50px; display: flex; align-items: center; }
+    .active { color: #83adff; border-bottom: 4px solid #83adff; font-weight: 700; }
+    .console-body { padding: 14px 22px; font-family: Consolas, monospace; font-size: 17px; }
+    .console-body .tip { color: #a9b5c6; font-family: "Microsoft YaHei", sans-serif; font-size: 16px; margin-bottom: 18px; }
+    .prompt { display: flex; align-items: center; gap: 12px; }
+    .prompt strong { color: #8eb6ff; font-size: 21px; }
+    .input-hint { border: 2px dashed #85abfa; background: #2e394a; color: white; border-radius: 8px; padding: 7px 13px; min-width: 335px; }
+    .legend { display: flex; align-items: center; gap: 10px; margin-top: 13px; font-size: 16px; color: #495671; }
+    .legend .swatch { width: 17px; height: 17px; background: #83adff; border-radius: 4px; }
+    .flow { display: grid; gap: 17px; margin-top: 22px; }
+    .step { padding: 22px 28px; }
+    .step .head { margin-bottom: 10px; }
+    .callout { display: flex; gap: 12px; align-items: flex-start; padding: 14px 18px; background: #eef2ff; border: 1px solid #d9e0ff; border-radius: 12px; margin-top: 13px; color: #3346aa; font-size: 17px; line-height: 1.45; }
+    code { font-family: Consolas, monospace; background: #e0e7ff; border-radius: 5px; padding: 1px 5px; color: #2d3f9d; }
+    .mini-ui { display: flex; gap: 13px; align-items: center; margin-top: 13px; }
+    .fake-button { border-radius: 8px; background: #4656d9; color: white; padding: 9px 18px; font-size: 16px; font-weight: 700; }
+    .arrow { color: #4656d9; font-size: 23px; font-weight: 700; }
+    .fake-field { flex: 1; border: 2px dashed #a4b0c5; border-radius: 8px; padding: 8px 12px; color: #68758b; font-size: 16px; }
+    .example-label { margin: 14px 0 8px; color: #64718b; font-size: 15px; font-weight: 700; }
+    .warning-shot { border-radius: 10px; background: #202833; color: #e8edf8; overflow: hidden; font-family: Consolas, monospace; }
+    .shot-tabs { border-bottom: 1px solid #46505d; padding: 10px 16px; color: #8fb2ff; font-size: 16px; font-weight: 700; }
+    .shot-body { padding: 14px 17px 17px; font-size: 16px; }
+    .security-tip { color: #efc77d; border-left: 3px solid #efc77d; padding-left: 11px; margin-bottom: 13px; font-family: "Microsoft YaHei", sans-serif; }
+    .typed { color: #e6f1ff; }
+    .typed b { color: #8fb2ff; margin-right: 10px; }
+    .typed span { display: inline-block; margin-left: 9px; color: #9ee1b2; font-family: "Microsoft YaHei", sans-serif; }
+    .two-shots { display: grid; grid-template-columns: 1fr 48px 1fr; gap: 10px; align-items: stretch; margin-top: 14px; }
+    .ui-shot { background: #12192b; color: white; border-radius: 10px; padding: 13px 15px; min-height: 125px; }
+    .ui-shot small { color: #aeb9d4; font-size: 13px; display: block; margin-bottom: 18px; }
+    .ui-shot .fake-button { display: inline-block; font-size: 15px; padding: 8px 13px; }
+    .console-shot { background: #202833; color: #dce8f9; border-radius: 10px; overflow: hidden; min-height: 125px; font: 15px Consolas, monospace; }
+    .console-shot .shot-tabs { padding: 8px 12px; }
+    .console-shot div:last-child { padding: 13px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .console-shot b { color: #8fb2ff; margin-right: 7px; }
+    .move-arrow { display: grid; place-items: center; color: #4656d9; font-size: 30px; font-weight: 700; }
+    .foot { margin: 21px 4px 0; color: #65728a; font-size: 16px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="eyebrow">UPDREAMBRIDGE · 首次配置</div>
+    <h1>跟着这张图完成连接</h1>
+    <p class="sub">只需在浏览器做一次复制，再回到工具箱验证保存。</p>
+
+    <section class="card first">
+      <div class="head"><span class="number">1</span><b>登录 UpDream，进入任意画布</b></div>
+      <p>按 <b>F12</b> 打开浏览器开发者工具，点击 <b>Console（控制台）</b>。这是同一个标签的英文和中文名称。</p>
+      <div class="browser">
+        <div class="toolbar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><div class="address">www.updream.cn　/　画布页面</div></div>
+        <div class="canvas"></div>
+        <div class="devtools">
+          <div class="tabs"><span class="tab">Elements</span><span class="tab active">Console</span><span class="tab">Sources</span><span class="tab">Network</span></div>
+          <div class="console-body"><div class="tip">开发者工具示意图：上方选 Console，下方输入命令。</div><div class="prompt"><strong>&gt;</strong><span class="input-hint">在这一行粘贴代码并回车</span></div></div>
+        </div>
+      </div>
+      <div class="legend"><span class="swatch"></span>蓝色下划线表示当前选中的 Console 标签。</div>
+    </section>
+
+    <div class="flow">
+      <section class="card step">
+        <div class="head"><span class="number">2</span><b>若控制台阻止粘贴，先解除限制</b></div>
+        <p>看到浏览器的安全提示时，按提示手动输入允许粘贴的文字并回车；没有提示就直接下一步。</p>
+        <div class="callout">英文提示常见 <code>allow pasting</code>；中文界面可能显示“允许粘贴”。以当前浏览器实际提示为准。</div>
+        <div class="example-label">控制台拦截粘贴示意图</div>
+        <div class="warning-shot"><div class="shot-tabs">Console</div><div class="shot-body"><div class="security-tip">浏览器提示：为保护账号安全，请先输入允许粘贴的文字。</div><div class="typed"><b>&gt;</b> allow pasting <span>按回车 ↵</span></div></div></div>
+      </section>
+      <section class="card step">
+        <div class="head"><span class="number">3</span><b>复制 F12 代码，粘贴到 Console</b></div>
+        <p>回到 UpdreamBridge 配置窗口，点击按钮，再回 Console 粘贴并按回车。代码会把必要字段复制到剪贴板。</p>
+        <div class="example-label">从配置窗口复制 → 到 Console 输入行粘贴</div>
+        <div class="two-shots"><div class="ui-shot"><small>UpdreamBridge · 账号配置</small><span class="fake-button">复制 F12 代码</span></div><div class="move-arrow">→</div><div class="console-shot"><div class="shot-tabs">Console</div><div><b>&gt;</b> copy(JSON.stringify(...)) ↵</div></div></div>
+      </section>
+      <section class="card step">
+        <div class="head"><span class="number">4</span><b>把返回内容粘贴回配置窗口</b></div>
+        <p>Console 执行后，回到工具箱的登录信息输入框，直接粘贴剪贴板里的 JSON。</p>
+        <div class="mini-ui"><span class="fake-field">登录信息输入框：粘贴 JSON</span><span class="arrow">→</span><span class="fake-button">验证并保存</span></div>
+      </section>
+    </div>
+    <p class="foot">使用前，这台电脑必须登录 UpDream；目前不支持多端。若被其他设备顶号，当前连接会失效，请在本机重新登录并配置。登录 JSON 含令牌，只粘贴到本机配置窗口。</p>
+  </main>
+</body>
+</html>

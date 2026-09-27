@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import json
 import os
 import re
@@ -32,6 +33,7 @@ from .workbuddy_chime import (
     workbuddy_hook_status,
 )
 from .wininet_proxy import apply_proxy_bypass
+from .updream_bridge import generate_image as generate_updream_image
 CREATE_NO_WINDOW = 0x08000000
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -77,9 +79,10 @@ def read_run_value(name: str) -> str | None:
 
 
 class ControlService:
-    HANDLERS = {"process_app", "proxy_override", "codex_system_proxy"}
+    HANDLERS = {"process_app", "updream_bridge", "proxy_override", "codex_system_proxy"}
     HANDLER_ACTIONS = {
         "process_app": {"toggle_enabled", "start", "stop", "restart", "test_sound", "set_sound", "open_folder", "toggle_startup", "sync_workbuddy"},
+        "updream_bridge": {"start", "generate_image"},
         "proxy_override": {"refresh", "add_domain", "list_domains", "delete_domain"},
         "codex_system_proxy": {"refresh", "repair"},
     }
@@ -154,6 +157,10 @@ class ControlService:
                 raise ValueError(f"keepAlive requires a non-hardware process_app with startup in {manifest_path}")
         if data.get("bundle"):
             raise ValueError(f"External binary bundles are not supported in the online edition: {manifest_path}")
+        if "updateInstallSource" in data and (
+            handler not in {"process_app", "updream_bridge"} or not isinstance(data["updateInstallSource"], bool) or not data.get("installSource")
+        ):
+            raise ValueError(f"updateInstallSource requires a built-in installSource in {manifest_path}")
         if scope == "private":
             if not str(data.get("id", "")).startswith("private-"):
                 raise ValueError(f"Private plugin id must start with private- in {manifest_path}")
@@ -205,7 +212,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.12.1",
+                "version": "0.14.1",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -233,6 +240,7 @@ class ControlService:
                     "developers": plugin["developers"],
                     "scope": plugin["_scope"],
                     "actions": access.get("actions", []),
+                    **({"actionInfo": plugin["agentActionInfo"]} if plugin.get("agentActionInfo") else {}),
                 })
         return {"ok": True, "plugins": entries}
 
@@ -259,6 +267,9 @@ class ControlService:
             try:
                 if plugin["handler"] == "process_app":
                     result = self._process_action(plugin, action, payload)
+                elif plugin["handler"] == "updream_bridge":
+                    result = (generate_updream_image(self.repo_root, payload) if action == "generate_image"
+                              else self._process_action(plugin, action, payload))
                 elif plugin["handler"] == "proxy_override":
                     result = self._proxy_action(plugin, action, payload)
                 else:
@@ -274,7 +285,7 @@ class ControlService:
                 return {"ok": False, "message": str(exc), "plugin": self._plugin_status(plugin)}
 
     def _plugin_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
-        if plugin["handler"] == "process_app":
+        if plugin["handler"] in {"process_app", "updream_bridge"}:
             detail = self._process_status(plugin)
         elif plugin["handler"] == "proxy_override":
             detail = self._proxy_status(plugin)
@@ -627,7 +638,7 @@ class ControlService:
         return f"已开启；Codex 监听正在运行，并已加入开机自启动{note}"
 
     def _ensure_installed(self, plugin: dict[str, Any], exe: Path) -> None:
-        if not exe.exists():
+        if not exe.exists() or plugin.get("updateInstallSource"):
             install_source = plugin.get("installSource")
             if install_source:
                 relative = Path(str(install_source))
@@ -638,11 +649,14 @@ class ControlService:
                 if source.name.lower() != exe.name.lower():
                     raise ValueError("插件安装源文件名与目标程序不一致")
                 if not source.is_file():
-                    raise FileNotFoundError(f"构建产物不存在，请先运行 scripts\\build-helpers.ps1：{source}")
-                exe.parent.mkdir(parents=True, exist_ok=True)
-                temporary = exe.with_suffix(".installing")
-                shutil.copy2(source, temporary)
-                temporary.replace(exe)
+                    raise FileNotFoundError(f"构建产物不存在，请运行相应模块的构建脚本：{source}")
+                if not exe.exists() or hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(exe.read_bytes()).digest():
+                    if exe.exists() and process_pids(plugin.get("processName", exe.name)):
+                        raise RuntimeError("配置窗口仍在运行；请先关闭后重试更新。")
+                    exe.parent.mkdir(parents=True, exist_ok=True)
+                    temporary = exe.with_suffix(".installing")
+                    shutil.copy2(source, temporary)
+                    temporary.replace(exe)
             else:
                 raise FileNotFoundError(f"程序不存在：{exe}")
         for support in plugin.get("supportFiles", []):

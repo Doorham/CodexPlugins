@@ -1,5 +1,10 @@
 # 全部功能说明
 
+## UpdreamBridge 图片生成
+
+工具箱内置 UpdreamBridge 登录配置窗口和 `generate_image` Agent 动作。用户在同一台电脑登录 UpDream，按配置指引自行从浏览器 Console 复制登录 JSON 并粘贴到配置窗口；工具箱将凭证保存在本机私人目录，不上传 GitHub。Agent 可通过工具箱内置动作生成和下载图片，支持文字、参考图、UpDream 图片模型及悠船 Midjourney。视频、画布编辑和多端登录不在支持范围内；本机被其他设备顶号后需重新配置。该模块不安装独立 Codex Skill。
+
+
 ## 1. Codex 对话 timeout 修复
 
 ### 解决什么

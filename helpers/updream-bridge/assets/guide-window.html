@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>配置指引</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; background: #eaf0f9; }
+    .shell { height: 100%; display: flex; flex-direction: column; }
+    .titlebar { height: 60px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 18px 0 22px; color: #f4f7ff; background: #151f32; user-select: none; cursor: move; }
+    .icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: linear-gradient(140deg, #8d83ff, #4d82ff); font-weight: 800; }
+    .title { font-size: 17px; font-weight: 800; }
+    .hint { margin-left: auto; color: #9eacc4; font-size: 12px; }
+    button { width: 35px; height: 34px; margin-left: 7px; border: 0; border-radius: 8px; background: transparent; color: #d9e3f6; font-size: 24px; cursor: pointer; }
+    button:hover { background: #e1465e; color: white; }
+    .scroll { flex: 1; min-height: 0; overflow: auto; text-align: center; }
+    img { width: min(100%, 1100px); height: auto; display: block; margin: 0 auto; }
+    .resize-grip { position: fixed; right: 0; bottom: 0; width: 25px; height: 25px; cursor: nwse-resize; }
+    .resize-grip::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 10px; height: 10px; border-right: 2px solid #7182ad; border-bottom: 2px solid #7182ad; }
+    .resize-edge { position: fixed; z-index: 19; background: transparent; }
+    .resize-edge[data-edge="left"] { left: 0; top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
+    .resize-edge[data-edge="right"] { right: 0; top: 10px; bottom: 25px; width: 8px; cursor: ew-resize; }
+    .resize-edge[data-edge="top"] { top: 0; left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
+    .resize-edge[data-edge="bottom"] { bottom: 0; left: 10px; right: 25px; height: 8px; cursor: ns-resize; }
+    .resize-edge[data-edge="top-left"], .resize-edge[data-edge="bottom-left"], .resize-edge[data-edge="top-right"] { width: 10px; height: 10px; }
+    .resize-edge[data-edge="top-left"] { top: 0; left: 0; cursor: nwse-resize; }
+    .resize-edge[data-edge="top-right"] { top: 0; right: 0; cursor: nesw-resize; }
+    .resize-edge[data-edge="bottom-left"] { bottom: 0; left: 0; cursor: nesw-resize; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="titlebar" id="dragArea">
+      <span class="icon">U</span><span class="title">配置指引</span>
+      <span class="hint">可拖到一旁，对照主窗口操作</span>
+      <button id="close" aria-label="关闭配置指引">×</button>
+    </header>
+    <main class="scroll"><img src="setup-guide.png" alt="UpdreamBridge 配置指引，包含三个步骤及示例图"></main>
+  </div>
+  <div class="resize-grip" id="resizeGrip" title="拖动调整大小"></div>
+  <div class="resize-edge" data-edge="left"></div><div class="resize-edge" data-edge="right"></div>
+  <div class="resize-edge" data-edge="top"></div><div class="resize-edge" data-edge="bottom"></div>
+  <div class="resize-edge" data-edge="top-left"></div><div class="resize-edge" data-edge="top-right"></div>
+  <div class="resize-edge" data-edge="bottom-left"></div>
+  <script>
+    const host = window.chrome && window.chrome.webview;
+    const send = (action, payload) => host && host.postMessage({ action, payload });
+    document.getElementById('close').onclick = () => send('close');
+    document.getElementById('dragArea').onpointerdown = event => { if (!event.target.closest('button')) send('drag'); };
+    document.getElementById('resizeGrip').onpointerdown = event => { event.preventDefault(); send('resize', {edge: 'bottom-right'}); };
+    document.querySelectorAll('.resize-edge').forEach(edge => {
+      edge.onpointerdown = event => { event.preventDefault(); send('resize', {edge: edge.dataset.edge}); };
+    });
+  </script>
+</body>
+</html>

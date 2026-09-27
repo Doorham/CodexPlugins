@@ -168,7 +168,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Python environment update failed.' }
     }
     $helperChanged = @($changedFiles | Where-Object {
-        $_ -like 'helpers/*' -or $_ -eq 'scripts/build-helpers.ps1'
+        ($_.StartsWith('helpers/') -and $_ -notlike 'helpers/updream-bridge/*') -or $_ -eq 'scripts/build-helpers.ps1'
     }).Count -gt 0
     if ($helperChanged) {
         & (Join-Path $repoRoot 'scripts\build-helpers.ps1') | Out-Null
@@ -181,6 +181,14 @@ try {
         if (Install-BuiltHelper 'ArctisNova5BatteryMonitor.exe' 'ArctisNova5BatteryMonitor' 'ArctisNova5BatteryMonitor' $remoteHead) { $helpersUpdated += 'ArctisNova5BatteryMonitor' }
         Install-BuiltHelper 'ArctisNova5StartupGate.exe' 'ArctisNova5BatteryMonitor' '' $remoteHead | Out-Null
         if (Install-BuiltHelper 'EnvironmentDetector.exe' 'EnvironmentDetector' 'EnvironmentDetector' $remoteHead) { $helpersUpdated += 'EnvironmentDetector' }
+    }
+    $updreamChanged = @($changedFiles | Where-Object {
+        $_ -like 'helpers/updream-bridge/*' -or
+        $_ -like 'apps/plugin-station/plugins/updream-bridge/*' -or
+        $_ -eq 'scripts/build-updream-bridge.ps1'
+    }).Count -gt 0
+    if ($updreamChanged) {
+        & (Join-Path $repoRoot 'scripts\build-updream-bridge.ps1') -AllowMissingSdk | Out-Null
     }
 
     $codexSystemProxyResult = $null

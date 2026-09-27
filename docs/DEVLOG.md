@@ -9,6 +9,13 @@
 
 ## 变更记录
 
+### 2026-09-28 · v0.14.1 · UpdreamBridge 内置生图进入 GitHub 网络版 · Althy
+
+- 将已在公区发布的 UpdreamBridge 1.1.0 以源码形式加入网络版，提供登录配置、分步指引和工具箱内置 `generate_image` Agent 动作；不安装独立 Skill。
+- 在线更新继续只从 GitHub `origin/main` 快进；UpdreamBridge 在本机单独构建，账号凭证和 WebView2 用户数据仅留在本机私人目录。
+- 验证：配置窗口源码构建成功；全仓 83 项测试通过（2 项按条件跳过），含 GitHub 公开边界、模块动作与版本校验；PowerShell 语法和 Git 差异检查通过。
+- 未解决项：真实 UpDream 付费生图需在已登录账号上单独验收；本机构建时 .NET 报告 WindowsBase 引用版本警告，但生成 EXE 成功。
+
 ### 2026-09-22 · v0.12.1 · 淘宝与天猫并行资源完整直连 · Doorham / Althy
 
 - “国内网站直连”升级至 `1.2.6`，加入淘宝和天猫实际并行加载的 `alicdn.com`、`tmall.com`、`tmall.hk`、`tmallglobal.com`、`mmstat.com`、`aliapp.org`、`alipay.com`、`tanx.com`。

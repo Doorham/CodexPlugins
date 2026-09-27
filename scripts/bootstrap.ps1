@@ -43,3 +43,8 @@ if (Test-Path -LiteralPath $codexSystemProxyScript -PathType Leaf) {
 }
 
 Write-Output "Development environment ready: $venvDir"
+
+$updreamBuilder = Join-Path $repoRoot 'scripts\build-updream-bridge.ps1'
+if (Test-Path -LiteralPath $updreamBuilder -PathType Leaf) {
+    & $updreamBuilder -AllowMissingSdk | Out-Null
+}

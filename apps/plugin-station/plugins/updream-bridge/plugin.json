@@ -1,0 +1,51 @@
+{
+  "id": "updream-bridge",
+  "name": "UpdreamBridge 图片生成",
+  "moduleVersion": "1.1.0",
+  "developers": ["Doorham", "Althy"],
+  "description": "配置本机 UpDream 登录，供 Codex 调用文字生图、参考图生图和悠船 Midjourney；不包含视频或画布编辑。",
+  "category": "图像工具",
+  "icon": "▧",
+  "accent": "#4653dd",
+  "mode": "on_demand",
+  "handler": "updream_bridge",
+  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\UpdreamBridgeConfig.exe",
+  "installSource": "artifacts/helpers/UpdreamBridgeConfig.exe",
+  "updateInstallSource": true,
+  "processName": "UpdreamBridgeConfig.exe",
+  "supportFiles": [
+    {"source": "helpers/updream-bridge/assets/index.html", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\index.html"},
+    {"source": "helpers/updream-bridge/assets/guide-window.html", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\guide-window.html"},
+    {"source": "helpers/updream-bridge/assets/setup-guide.png", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\setup-guide.png"},
+    {"source": "helpers/updream-bridge/updream_gen.py", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\updream_gen.py"}
+  ],
+  "actions": ["start", "generate_image"],
+  "uiActions": [{"id": "start", "label": "打开配置", "kind": "primary"}],
+  "agentAccess": {"enabled": true, "actions": ["start", "generate_image"]},
+  "agentActionInfo": {
+    "start": "打开本机 UpdreamBridge 登录配置窗口。",
+    "generate_image": {
+      "description": "用工具箱内置的 UpDream 桥在本机生成并下载图片。只在用户明确要求生图时调用；失败后先查看 UpDream 任务状态，不自动重复付费提交。",
+      "payload": {
+        "prompt": "必填，生图提示词",
+        "model": "可选，默认 gpt-image-2-5-sunburst；悠船 Midjourney 用 mj",
+        "ratio": "可选，默认 16:9",
+        "resolution": "可选，1K / 2K / 4K，默认 4K",
+        "quality": "可选，low / medium / high，默认 high",
+        "num": "可选，1–4，默认 1",
+        "refs": "可选，本机参考图绝对路径数组，最多 4 张",
+        "out": "可选，本机输出目录绝对路径",
+        "prefix": "可选，输出文件名前缀",
+        "mj": "可选，悠船设置对象：version、speed、stylize、chaos、weird、seed、quality、raw、tile、negative"
+      }
+    }
+  },
+  "localDataPolicy": {
+    "scope": "local-private",
+    "paths": ["%USERPROFILE%\\.updream\\credentials.json", "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\webview2-data"],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true,
+    "containsCredentials": true
+  }
+}
