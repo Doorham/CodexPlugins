@@ -25,6 +25,9 @@ function renderFilters(plugins) {
 }
 
 function renderPageTabs() {
+  const active = Boolean(state.dashboard.company?.active);
+  document.getElementById('companyTab').hidden = !active;
+  if (!active && state.page === 'company') { state.page = 'shared'; state.filter = '全部'; }
   document.querySelectorAll('.page-tab').forEach(button => {
     button.classList.toggle('active', button.dataset.page === state.page);
     button.setAttribute('aria-selected', String(button.dataset.page === state.page));
@@ -33,7 +36,7 @@ function renderPageTabs() {
   const errors = state.dashboard.privateLayer.errors || [];
   document.getElementById('privateLayerStatus').textContent = errors.length
     ? `有 ${errors.length} 个私人清单未通过安全检查；公共插件不受影响。`
-    : '私人插件默认不上传 Y 盘、不进入 Git、不同步到其他员工电脑。';
+    : '私人插件不上传 GitHub、不进入 Git、不同步到其他电脑。';
 }
 
 function card(plugin) {
@@ -75,7 +78,7 @@ function render() {
   const plugins = state.dashboard.plugins.filter(plugin => plugin.scope === state.page);
   renderFilters(plugins);
   document.getElementById('version').textContent = `v${state.dashboard.app.version} · ${state.dashboard.app.developers.map(escapeHtml).join(' / ')}`;
-  document.getElementById('summary').textContent = `${state.page === 'private' ? '私人' : '公共'} · ${plugins.filter(p => p.enabled || p.running).length} 个开启 · ${plugins.length} 个插件`;
+  document.getElementById('summary').textContent = `${state.page === 'private' ? '私人' : state.page === 'company' ? '公司' : '公共'} · ${plugins.filter(p => p.enabled || p.running).length} 个开启 · ${plugins.length} 个插件`;
   const visible = state.filter === '全部' ? plugins : plugins.filter(p => p.category === state.filter);
   grid.innerHTML = visible.length ? visible.map(card).join('') : `<div class="empty-page">
     <strong>${state.page === 'private' ? '还没有私人插件' : '当前分类没有插件'}</strong>

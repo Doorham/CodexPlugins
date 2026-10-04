@@ -129,3 +129,5 @@ button { font: inherit; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 @keyframes shine { to { background-position-x: -200%; } }
 @media (max-width: 760px) { main { padding: 22px; } .summary { display: none; } .plugin-grid { grid-template-columns: 1fr; } .toolbar { align-items: start; gap: 14px; flex-direction: column; } .private-notice { align-items: flex-start; flex-direction: column; } }
+
+[hidden] { display: none !important; }

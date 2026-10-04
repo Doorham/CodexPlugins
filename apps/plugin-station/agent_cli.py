@@ -13,6 +13,8 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("status")
     sub.add_parser("manifest")
+    importer = sub.add_parser("import-company-guide", help="导入用户提供的公司引导文件，仅启用两个公司模块")
+    importer.add_argument("file")
     action = sub.add_parser("action")
     action.add_argument("plugin_id")
     action.add_argument("action")
@@ -25,6 +27,8 @@ def main() -> int:
         result = service.dashboard()
     elif args.command == "manifest":
         result = service.agent_manifest()
+    elif args.command == "import-company-guide":
+        result = service.import_company_guide(args.file)
     else:
         result = service.perform_action(
             args.plugin_id,

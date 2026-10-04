@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import base64
 import csv
 import hashlib
@@ -34,6 +35,9 @@ from .workbuddy_chime import (
 )
 from .wininet_proxy import apply_proxy_bypass
 from .updream_bridge import generate_image as generate_updream_image
+from .company_access import CompanyAccess, COMPANY_ID
+from .company_drives import (config_status as network_config_status, enable_linked_connections, ensure_full_access_default, ensure_mappings, expected_drives, linked_connections_enabled, probe_drives, write_test as network_write_test)
+
 CREATE_NO_WINDOW = 0x08000000
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -58,16 +62,53 @@ def hidden_run(args: list[str], timeout: int = 15) -> subprocess.CompletedProces
     )
 
 
-def process_pids(image_name: str) -> list[int]:
-    result = hidden_run(["tasklist.exe", "/FI", f"IMAGENAME eq {image_name}", "/FO", "CSV", "/NH"])
-    pids: list[int] = []
+def all_process_pids() -> dict[str, list[int]]:
+    result = hidden_run(["tasklist.exe", "/FO", "CSV", "/NH"])
+    snapshot: dict[str, list[int]] = {}
     for row in csv.reader(result.stdout.splitlines()):
-        if len(row) >= 2 and row[0].lower() == image_name.lower():
+        if len(row) >= 2:
             try:
-                pids.append(int(row[1]))
+                snapshot.setdefault(row[0].lower(), []).append(int(row[1]))
             except ValueError:
                 pass
-    return pids
+    return snapshot
+
+
+def process_pids(image_name: str, executable: Path | None = None, *, snapshot: dict[str, list[int]] | None = None) -> list[int]:
+    if snapshot is None:
+        result = hidden_run(["tasklist.exe", "/FI", f"IMAGENAME eq {image_name}", "/FO", "CSV", "/NH"])
+        pids = []
+        for row in csv.reader(result.stdout.splitlines()):
+            if len(row) >= 2 and row[0].lower() == image_name.lower():
+                try:
+                    pids.append(int(row[1]))
+                except ValueError:
+                    pass
+    else:
+        pids = list(snapshot.get(image_name.lower(), []))
+    if executable is None:
+        return pids
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_uint32]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint32)]
+    kernel.QueryFullProcessImageNameW.restype = ctypes.c_bool
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    expected = os.path.normcase(str(executable.resolve()))
+    matching = []
+    for pid in pids:
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            continue
+        try:
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = ctypes.c_uint32(len(buffer))
+            if kernel.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(length)):
+                if os.path.normcase(buffer.value) == expected:
+                    matching.append(pid)
+        finally:
+            kernel.CloseHandle(handle)
+    return matching
 
 
 def read_run_value(name: str) -> str | None:
@@ -79,8 +120,9 @@ def read_run_value(name: str) -> str | None:
 
 
 class ControlService:
-    HANDLERS = {"process_app", "updream_bridge", "proxy_override", "codex_system_proxy"}
+    HANDLERS = {"process_app", "updream_bridge", "proxy_override", "codex_system_proxy", "network_drive_access"}
     HANDLER_ACTIONS = {
+        "network_drive_access": {"refresh", "repair"},
         "process_app": {"toggle_enabled", "start", "stop", "restart", "test_sound", "set_sound", "open_folder", "toggle_startup", "sync_workbuddy"},
         "updream_bridge": {"start", "generate_image"},
         "proxy_override": {"refresh", "add_domain", "list_domains", "delete_domain"},
@@ -93,6 +135,8 @@ class ControlService:
         self.private_root = expand_path(r"%LOCALAPPDATA%\CompanyAIHelpers\CodexTools\PrivatePlugins")
         self.private_errors: list[str] = []
         self._lock = threading.RLock()
+        self.company_access = CompanyAccess()
+        self._network_drive_cache = None
         self._arctis_battery_cache: tuple[float, dict[str, Any]] | None = None
         self._hardware_presence_cache: dict[str, tuple[float, bool]] = {}
         self._keep_alive_attempts: dict[str, list[float]] = {}
@@ -184,11 +228,21 @@ class ControlService:
                 try:
                     data = json.loads(manifest_path.read_text(encoding="utf-8"))
                     plugin_id = data["id"]
+                    if plugin_id == "private-nas-remote-connect" or data.get("sourcePluginId") == "private-nas-remote-connect":
+                        continue
+                    if data.get("companyId"):
+                        if data["companyId"] != COMPANY_ID or not self.company_access.active(data["companyId"]):
+                            continue
+                        payload_root = self.company_access.payload_root()
+                        if data["handler"] == "process_app":
+                            data["executable"] = str(payload_root / "NasRemoteConnect.exe")
+                        elif data["handler"] == "network_drive_access":
+                            data["drives"] = json.loads((payload_root / "nas-drives.json").read_text(encoding="utf-8-sig"))["drives"]
                     self._validate_plugin(data, manifest_path, scope)
                     if plugin_id in plugins:
                         raise ValueError(f"Duplicate plugin id: {plugin_id}")
                     data["_manifest"] = str(manifest_path)
-                    data["_scope"] = scope
+                    data["_scope"] = "company" if data.get("companyId") else scope
                     plugins[plugin_id] = data
                 except Exception as exc:
                     if strict:
@@ -200,6 +254,8 @@ class ControlService:
         with self._lock:
             cards = []
             for plugin in self.plugins.values():
+                if not self._company_allowed(plugin):
+                    continue
                 if plugin.get("hardwareGate"):
                     available = self._hardware_available(plugin)
                     self._sync_hardware_lifecycle(plugin, available)
@@ -212,7 +268,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.14.1",
+                "version": "0.17.1",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -223,12 +279,15 @@ class ControlService:
                 "upload": False,
                 "errors": self.private_errors,
             },
+            "company": self.company_access.status(),
             "timestamp": int(time.time() * 1000),
         }
 
     def agent_manifest(self) -> dict[str, Any]:
         entries = []
         for plugin in self.plugins.values():
+            if not self._company_allowed(plugin):
+                continue
             if plugin.get("hardwareGate") and not self._hardware_available(plugin):
                 continue
             access = plugin.get("agentAccess", {})
@@ -259,6 +318,8 @@ class ControlService:
             if plugin.get("hardwareGate") and not self._hardware_available(plugin):
                 message = plugin["hardwareGate"].get("notFoundMessage", "未检测到对应硬件")
                 return {"ok": False, "message": message}
+            if not self._company_allowed(plugin):
+                return {"ok": False, "message": "公司模块未启用或本机配置校验失败"}
             allowed = set(plugin.get("actions", []))
             if origin == "agent":
                 allowed &= set(plugin.get("agentAccess", {}).get("actions", []))
@@ -270,6 +331,8 @@ class ControlService:
                 elif plugin["handler"] == "updream_bridge":
                     result = (generate_updream_image(self.repo_root, payload) if action == "generate_image"
                               else self._process_action(plugin, action, payload))
+                elif plugin["handler"] == "network_drive_access":
+                    result = self._network_drive_action(plugin, action)
                 elif plugin["handler"] == "proxy_override":
                     result = self._proxy_action(plugin, action, payload)
                 else:
@@ -284,9 +347,127 @@ class ControlService:
             except Exception as exc:
                 return {"ok": False, "message": str(exc), "plugin": self._plugin_status(plugin)}
 
+    def _company_allowed(self, plugin: dict[str, Any]) -> bool:
+        return not plugin.get("companyId") or self.company_access.active(plugin["companyId"])
+
+
+    def import_company_guide(self, path: str) -> dict[str, Any]:
+        with self._lock:
+            try:
+                result = self.company_access.import_guide(path)
+                self._network_drive_cache = None
+                self.plugins = self._load_plugins()
+                return result
+            except Exception:
+                # Do not echo private configuration or compiler output into UI/log.
+                return {"ok": False, "message": "导入未完成：请检查公司文件格式和完整工具箱是否已安装"}
+
+
+    def deactivate_company(self) -> dict[str, Any]:
+        with self._lock:
+            result = self.company_access.deactivate()
+            self.plugins = self._load_plugins()
+            self._network_drive_cache = None
+            return result
+
+
+    def _plugin_pids(self, plugin: dict[str, Any]) -> list[int]:
+        exe = expand_path(plugin["executable"]) if plugin.get("_shared_private") or plugin.get("companyId") else None
+        if hasattr(self, "_dashboard_pid_snapshot"):
+            if self._dashboard_pid_snapshot is False:
+                self._dashboard_pid_snapshot = all_process_pids()
+            return process_pids(plugin["processName"], exe, snapshot=self._dashboard_pid_snapshot)
+        return process_pids(plugin["processName"], exe) if exe is not None else process_pids(plugin["processName"])
+
+
+    def _stop_plugin_process(self, plugin: dict[str, Any]) -> None:
+        if hasattr(self, "_dashboard_pid_snapshot"):
+            self._dashboard_pid_snapshot = False
+        if plugin.get("_shared_private") or plugin.get("companyId"):
+            for pid in self._plugin_pids(plugin):
+                hidden_run(["taskkill.exe", "/PID", str(pid), "/F"])
+        else:
+            hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
+
+
+    def _network_drive_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
+        now = time.monotonic()
+        if self._network_drive_cache and getattr(self, "_network_drive_cache_id", None) == plugin["id"] and now - self._network_drive_cache[0] < 10:
+            return self._network_drive_cache[1]
+        drives = probe_drives(plugin)
+        readable_count = sum(1 for item in drives if item["readable"])
+        mapping_count = sum(1 for item in drives if item["mappingMatches"])
+        config = network_config_status(plugin)
+        linked = linked_connections_enabled()
+        detail_lines = [
+            " · ".join(
+                f"{item['letter']}: {'可读' if item['readable'] else '不可读'}"
+                for item in drives
+            ),
+            f"Codex：{config['message']}",
+            "跨权限映射：已启用" if linked else "跨权限映射：待修复（可能导致部分 Codex 会话看不到盘符）",
+        ]
+        complete = readable_count == len(drives) and mapping_count == len(drives) and config["configured"] and linked
+        result = {
+            "installed": config["configured"],
+            "running": complete,
+            "pids": [],
+            "startupEnabled": None,
+            "enabled": complete,
+            "statusText": f"可读 {readable_count}/{len(drives)} · 映射 {mapping_count}/{len(drives)}" if drives else "未检测到现有网络盘",
+            "detailLines": detail_lines,
+        }
+        self._network_drive_cache = (now, result)
+        self._network_drive_cache_id = plugin["id"]
+        return result
+
+
+    def _network_drive_action(self, plugin: dict[str, Any], action: str) -> Any:
+        self._network_drive_cache = None
+        if action == "refresh":
+            return "网络盘和 Codex 完全访问权限已重新检测"
+        if action != "repair":
+            raise ValueError(f"不支持的动作：{action}")
+
+        if plugin.get("companyId"):
+            probes = probe_drives(plugin)
+            if any(not p["mappingMatches"] for p in probes):
+                raise ValueError("请先通过公司 NAS 远程连接模块确认两台 NAS 的凭据并连接四个盘，再修复 Codex 访问")
+            mappings = [{"ok": True} for p in probes]
+        else:
+            mappings = ensure_mappings(plugin)
+        failed_mappings = [item for item in mappings if not item["ok"]]
+        if failed_mappings:
+            summary = "；".join(item["message"] for item in failed_mappings)
+            raise RuntimeError(f"网络盘映射未全部就绪：{summary}")
+
+        record_folder = expand_path(plugin["recordFolder"])
+        permissions = ensure_full_access_default(
+            plugin,
+            backup_root=record_folder / "Backups",
+        )
+        linked = enable_linked_connections(
+            self.repo_root / "system" / "company-drive-access" / "enable-linked-connections.ps1"
+        )
+        tests = network_write_test(plugin)
+        failed_tests = [item for item in tests if not item["ok"]]
+        self._network_drive_cache = None
+        if failed_tests:
+            summary = "、".join(item["letter"] for item in failed_tests)
+            raise RuntimeError(f"配置已保存，但 {summary} 盘读写回环测试失败")
+        restart_note = "；请重启 Windows 和 Codex" if linked["restartRequired"] else "；请重启 Codex"
+        return {
+            "message": f"{len(tests)} 个现有网络盘通过创建、读回和清理测试{restart_note}",
+            "configBackup": permissions.get("backup"),
+            "restartRequired": True,
+        }
+
+
     def _plugin_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
         if plugin["handler"] in {"process_app", "updream_bridge"}:
             detail = self._process_status(plugin)
+        elif plugin["handler"] == "network_drive_access":
+            detail = self._network_drive_status(plugin)
         elif plugin["handler"] == "proxy_override":
             detail = self._proxy_status(plugin)
         else:
@@ -357,7 +538,7 @@ class ControlService:
 
     def _process_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
         exe = expand_path(plugin["executable"])
-        pids = process_pids(plugin["processName"])
+        pids = self._plugin_pids(plugin)
         startup_enabled = self._startup_enabled(plugin, exe)
         workbuddy = None
         if plugin["id"] == "codex-answer-chime":
@@ -479,10 +660,10 @@ class ControlService:
 
     def _sync_hardware_lifecycle(self, plugin: dict[str, Any], available: bool) -> None:
         exe = expand_path(plugin["executable"])
-        pids = process_pids(plugin["processName"])
+        pids = self._plugin_pids(plugin)
         if not available:
             if pids:
-                hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
+                self._stop_plugin_process(plugin)
             return
         if pids or not self._startup_enabled(plugin, exe):
             return
@@ -514,7 +695,7 @@ class ControlService:
     def _recover_keep_alive(self, plugin: dict[str, Any], *, user_initiated: bool = False) -> bool:
         plugin_id = str(plugin["id"])
         exe = expand_path(plugin["executable"])
-        if process_pids(plugin["processName"]):
+        if self._plugin_pids(plugin):
             self._keep_alive_errors.pop(plugin_id, None)
             return True
         if not self._startup_enabled(plugin, exe):
@@ -534,7 +715,7 @@ class ControlService:
             self._ensure_installed(plugin, exe)
             self._start_plugin_process(plugin, exe)
             time.sleep(KEEP_ALIVE_START_GRACE_SECONDS)
-            if not process_pids(plugin["processName"]):
+            if not self._plugin_pids(plugin):
                 raise RuntimeError("程序启动后未能保持运行")
         except Exception as exc:
             self._keep_alive_errors[plugin_id] = str(exc)
@@ -566,7 +747,7 @@ class ControlService:
         if action in {"start", "restart", "test_sound"}:
             self._ensure_installed(plugin, exe)
         if action in {"stop", "restart"}:
-            hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
+            self._stop_plugin_process(plugin)
             time.sleep(0.35)
         if action in {"start", "restart"}:
             self._start_plugin_process(plugin, exe)
@@ -590,7 +771,7 @@ class ControlService:
         raise ValueError(f"不支持的动作：{action}")
 
     def _toggle_enabled(self, plugin: dict[str, Any], exe: Path) -> str:
-        pids = process_pids(plugin["processName"])
+        pids = self._plugin_pids(plugin)
         startup_enabled = self._startup_enabled(plugin, exe)
         workbuddy = workbuddy_hook_status(exe) if plugin["id"] == "codex-answer-chime" else None
         if plugin.get("keepAlive") and startup_enabled and not pids:
@@ -598,7 +779,7 @@ class ControlService:
                 return "已恢复运行；开机自启动保持开启"
         if pids or startup_enabled or (workbuddy and workbuddy.get("enabled")):
             if pids:
-                hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
+                self._stop_plugin_process(plugin)
                 time.sleep(0.35)
             self._set_startup(plugin, exe, False)
             workbuddy_note = ""
@@ -624,7 +805,7 @@ class ControlService:
             self._set_startup(plugin, exe, False)
             raise
         time.sleep(0.8)
-        if not process_pids(plugin["processName"]):
+        if not self._plugin_pids(plugin):
             self._set_startup(plugin, exe, False)
             raise RuntimeError("程序未能保持运行，已回滚开机自启动")
         if workbuddy and workbuddy.get("detected"):

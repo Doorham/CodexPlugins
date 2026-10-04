@@ -105,3 +105,13 @@ git diff --check
 本项目采用 [Apache License 2.0](LICENSE) 开源。使用、修改和分发时请遵守许可证条款；许可证不授予项目名称或商标的额外使用权。
 环境工具内嵌的 Microsoft Fluent Emoji 月相图采用 MIT License，完整归属与许可文本见
 [第三方许可说明](helpers/environment-detector/THIRD-PARTY-NOTICES.md)。
+
+## 公司可选模块（0.17.1 起）
+
+两个公司模块默认隐藏。公司内部提供一个私有 JSON 引导文件，先将副本放在本机，再让 Codex 使用工具箱配套 Python 导入：
+
+```powershell
+.\.runtime\venv\Scripts\python.exe .\apps\plugin-station\agent_cli.py import-company-guide "收到的引导文件路径"
+```
+
+引导文件包含内部连接配置，不要提交到此仓库。导入只启用模块；随后打开工具箱的“公司模块”，由用户点击连接并完成官方 Tailscale 授权和两台 NAS 的凭据确认。不会覆盖已有不同目标的盘符，不保存密码。详细说明见 [公司模块导入](docs/COMPANY-MODULES.md)。

@@ -1,0 +1,49 @@
+{
+  "id": "company-network-drive-access",
+  "name": "公司网络盘访问",
+  "moduleVersion": "1.0.0",
+  "developers": [
+    "Althy"
+  ],
+  "description": "让 Codex 保持内置完全访问权限并读写公司 W、X、Y、Z 网络盘，同时修复普通/管理员会话之间映射盘不可见的问题。不会新增权限策略选项或保存共享密码。",
+  "category": "万灵传媒",
+  "icon": "▦",
+  "accent": "#38bdf8",
+  "mode": "system",
+  "handler": "network_drive_access",
+  "recordFolder": "%LOCALAPPDATA%\\CompanyAIHelpers\\CodexNetworkDriveAccess",
+  "localDataPolicy": {
+    "scope": "local-private",
+    "paths": [
+      "%USERPROFILE%\\.codex\\config.toml",
+      "%LOCALAPPDATA%\\CompanyAIHelpers\\CodexNetworkDriveAccess"
+    ],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true,
+    "containsCredentials": false
+  },
+  "actions": [
+    "refresh",
+    "repair"
+  ],
+  "uiActions": [
+    {
+      "id": "repair",
+      "label": "修复访问",
+      "kind": "primary"
+    },
+    {
+      "id": "refresh",
+      "label": "重新检测",
+      "kind": "secondary"
+    }
+  ],
+  "agentAccess": {
+    "enabled": true,
+    "actions": [
+      "refresh"
+    ]
+  },
+  "companyId": "wanling-media"
+}
