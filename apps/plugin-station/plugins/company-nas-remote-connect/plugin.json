@@ -1,12 +1,13 @@
 {
   "id": "company-nas-remote-connect",
   "name": "公司 NAS 远程连接",
-  "moduleVersion": "1.0.0",
+  "moduleVersion": "1.2.0",
   "developers": [
-    "Althy"
+    "Althy",
+    "Doorham"
   ],
   "companyId": "wanling-media",
-  "description": "安装或复用 Windows Tailscale，完成 GitHub 官方授权，手动确认两台 NAS 的登录信息后连接四个盘。",
+  "description": "逐盘显示实际连接通道；可选择自动、局域网或 Tailscale，切换已有映射需确认，创建映射前需确认 NAS 凭据。",
   "category": "万灵传媒",
   "icon": "▦",
   "accent": "#38bdf8",
@@ -20,15 +21,12 @@
   "uiActions": [
     {
       "id": "start",
-      "label": "安装并连接",
+      "label": "打开连接中心",
       "kind": "primary"
     }
   ],
   "agentAccess": {
     "enabled": false,
     "actions": []
-  },
-  "startArguments": [
-    "--connect"
-  ]
+  }
 }

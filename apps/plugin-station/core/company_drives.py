@@ -59,10 +59,36 @@ def expected_drives(plugin: dict[str, Any]) -> list[dict[str, str]]:
         remote = str(item.get("remote", "")).strip()
         if not re.fullmatch(r"[WXYZ]", letter) or not re.fullmatch(r'\\\\[a-zA-Z0-9.-]+\\[^\\/:*?"<>|\r\n]+', remote):
             raise ValueError("网络盘清单只允许 W、X、Y、Z 和 UNC 路径")
-        drives.append({"letter": letter, "root": f"{letter}:\\", "remote": remote})
+        drive = {"letter": letter, "root": f"{letter}:\\", "remote": remote}
+        if "lanRemote" in item:
+            lan = item["lanRemote"]
+            if (not isinstance(lan, str) or not re.fullmatch(r'\\\\[a-zA-Z0-9.-]+\\[^\\/:*?"<>|\r\n]+', lan)
+                    or lan.rsplit("\\", 1)[-1].casefold() != remote.rsplit("\\", 1)[-1].casefold()):
+                raise ValueError("局域网备用地址必须是同一共享的完整 UNC 路径")
+            drive["lanRemote"] = lan
+        drives.append(drive)
     if [item["letter"] for item in drives] != ["W", "X", "Y", "Z"]:
         raise ValueError("网络盘清单必须按 W、X、Y、Z 排列")
     return drives
+
+
+def mapping_matches(drive: dict[str, Any], actual: str | None) -> bool:
+    """Accept only explicitly configured endpoints, never share-name guesses."""
+    return bool(actual and any(
+        actual.rstrip("\\").casefold() == remote.rstrip("\\").casefold()
+        for remote in (drive["remote"], drive.get("lanRemote")) if remote
+    ))
+
+
+def mapping_route(drive: dict[str, Any], actual: str | None) -> str | None:
+    if not actual:
+        return None
+    normalized = actual.rstrip("\\").casefold()
+    if drive.get("lanRemote") and normalized == drive["lanRemote"].rstrip("\\").casefold():
+        return "lan"
+    if normalized == drive["remote"].rstrip("\\").casefold():
+        return "tailscale"
+    return None
 
 
 def _wnet_remote(letter: str) -> str | None:
@@ -124,7 +150,8 @@ def probe_drives(plugin: dict[str, Any]) -> list[dict[str, Any]]:
         results.append({
             **drive,
             "actualRemote": actual,
-            "mappingMatches": bool(actual and actual.casefold() == drive["remote"].casefold()),
+            "mappingMatches": mapping_matches(drive, actual),
+            "route": mapping_route(drive, actual),
             "visible": visible,
             "readable": readable,
             "writableHint": bool(visible and os.access(drive["root"], os.W_OK)),
@@ -139,7 +166,7 @@ def ensure_mappings(plugin: dict[str, Any]) -> list[dict[str, Any]]:
     actions = []
     for drive in expected_drives(plugin):
         actual = _wnet_remote(drive["letter"])
-        if actual and actual.casefold() != drive["remote"].casefold():
+        if actual and not mapping_matches(drive, actual):
             actions.append({
                 "letter": drive["letter"],
                 "ok": False,

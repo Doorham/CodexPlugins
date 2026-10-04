@@ -52,7 +52,8 @@ def read_guide(path):
     if not isinstance(config["defaultUser"], str) or not re.fullmatch(r"[\w.@-]{1,128}", config["defaultUser"]):
         raise ValueError("默认用户名格式无效")
     if (not isinstance(config["drives"], list) or len(config["drives"]) != 4
-            or any(not isinstance(d, dict) or set(d) != {"letter", "remote"} for d in config["drives"])):
+            or any(not isinstance(d, dict) or not {"letter", "remote"} <= set(d)
+                   or set(d) - {"letter", "remote", "lanRemote"} for d in config["drives"])):
         raise ValueError("网络盘配置格式无效")
     from .company_drives import expected_drives
     expected_drives(config)
@@ -73,6 +74,11 @@ def build_connector(folder):
                     *["/reference:" + name + ".dll" for name in
                       ("System", "System.Core", "System.Security", "System.Windows.Forms", "System.Drawing", "System.Web.Extensions")],
                     str(source)], check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+
+
+def connector_source_hash():
+    source = Path(__file__).resolve().parents[3] / "helpers" / "nas-remote-connect" / "src" / "Program.cs"
+    return hashlib.sha256(source.read_bytes()).hexdigest()
 
 
 class CompanyAccess:
@@ -110,6 +116,34 @@ class CompanyAccess:
 
     def import_guide(self, path):
         config = read_guide(path)  # Fully validate before creating state or building anything.
+        self._install_config(config)
+        return {"ok": True, "message": "公司文件已导入，两个公司模块已启用；连接时再完成 Tailscale 和 NAS 登录"}
+
+    def refresh_connector(self):
+        record = self.record()
+        if not record or record.get("sourceSha256") == connector_source_hash():
+            return False
+        config_path = self.root / "payloads" / record["payloadId"] / "nas-drives.json"
+        self._install_config(json.loads(config_path.read_text(encoding="utf-8-sig")))
+        return True
+
+    def confirm_lan_mappings(self, mappings, *, confirmed=False):
+        """Save endpoints only after the human confirms they are the same NAS."""
+        if not confirmed or set(mappings) != set("WXYZ"):
+            raise ValueError("必须明确确认现有四个盘对应同两台 NAS")
+        folder = self.payload_root()
+        if folder is None:
+            raise ValueError("公司模块尚未启用")
+        config = json.loads((folder / "nas-drives.json").read_text(encoding="utf-8-sig"))
+        for drive in config["drives"]:
+            drive["lanRemote"] = mappings[drive["letter"]]
+        from .company_drives import expected_drives
+        expected_drives(config)  # Reject malformed endpoints and different shares.
+        self._install_config(config)
+        return {"ok": True, "message": "已保存明确确认的局域网备用地址；现有映射保持不变"}
+
+    def _install_config(self, config):
+        source_hash = connector_source_hash()
         payload_id = uuid.uuid4().hex
         folder = self.root / "payloads" / payload_id
         folder.mkdir(parents=True)
@@ -119,14 +153,16 @@ class CompanyAccess:
             (folder / "nas-drives.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             files = {name: hashlib.sha256((folder / name).read_bytes()).hexdigest()
                      for name in ("NasRemoteConnect.exe", "nas-drives.json")}
-            record = {"companyId": COMPANY_ID, "format": "local-guide/v1", "payloadId": payload_id, "files": files}
+            if source_hash != connector_source_hash():
+                raise ValueError("编译期间连接程序源码发生变化，请重试")
+            record = {"companyId": COMPANY_ID, "format": "local-guide/v1", "payloadId": payload_id,
+                      "files": files, "sourceSha256": source_hash}
             temporary.write_bytes(protect(json.dumps(record).encode()))
             temporary.replace(self.record_file)
         except Exception:
             temporary.unlink(missing_ok=True)
             shutil.rmtree(folder)
             raise
-        return {"ok": True, "message": "公司文件已导入，两个公司模块已启用；连接时再完成 Tailscale 和 NAS 登录"}
 
     def deactivate(self):
         self.record_file.unlink(missing_ok=True)

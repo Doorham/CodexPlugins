@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.17.6",
+  "version": "0.18.0",
   "license": "Apache-2.0",
   "developers": [
     "Doorham",
@@ -79,16 +79,18 @@
     },
     {
       "id": "company-nas-remote-connect",
-      "version": "1.0.0",
+      "version": "1.2.0",
       "developers": [
-        "Althy"
+        "Althy",
+        "Doorham"
       ]
     },
     {
       "id": "company-network-drive-access",
-      "version": "1.0.0",
+      "version": "1.1.1",
       "developers": [
-        "Althy"
+        "Althy",
+        "Doorham"
       ]
     }
   ],

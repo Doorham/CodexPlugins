@@ -268,7 +268,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.17.6",
+                "version": "0.18.0",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
@@ -399,14 +399,22 @@ class ControlService:
         mapping_count = sum(1 for item in drives if item["mappingMatches"])
         config = network_config_status(plugin)
         linked = linked_connections_enabled()
-        detail_lines = [
-            " · ".join(
-                f"{item['letter']}: {'可读' if item['readable'] else '不可读'}"
-                for item in drives
-            ),
+        route_names = {"lan": "局域网", "tailscale": "Tailscale 地址"}
+        def describe_drive(item: dict[str, Any]) -> str:
+            route = route_names.get(item.get("route"), "未连接或未知通道")
+            channel = f"{route} · " if plugin.get("companyId") else ""
+            return f"{item['letter']}: {channel}{'可读' if item['readable'] else '不可读'}"
+        drive_lines = ([describe_drive(item) for item in drives] if plugin.get("companyId")
+                       else [" · ".join(describe_drive(item) for item in drives)])
+        detail_lines = drive_lines + [
             f"Codex：{config['message']}",
             "跨权限映射：已启用" if linked else "跨权限映射：待修复（可能导致部分 Codex 会话看不到盘符）",
         ]
+        route_status = ""
+        if plugin.get("companyId"):
+            lan_count = sum(item.get("route") == "lan" for item in drives)
+            tailscale_count = sum(item.get("route") == "tailscale" for item in drives)
+            route_status = f" · 局域网 {lan_count} / Tailscale {tailscale_count}"
         complete = readable_count == len(drives) and mapping_count == len(drives) and config["configured"] and linked
         result = {
             "installed": config["configured"],
@@ -414,7 +422,7 @@ class ControlService:
             "pids": [],
             "startupEnabled": None,
             "enabled": complete,
-            "statusText": f"可读 {readable_count}/{len(drives)} · 映射 {mapping_count}/{len(drives)}" if drives else "未检测到现有网络盘",
+            "statusText": f"可读 {readable_count}/{len(drives)} · 映射 {mapping_count}/{len(drives)}{route_status}" if drives else "未检测到现有网络盘",
             "detailLines": detail_lines,
         }
         self._network_drive_cache = (now, result)
@@ -432,7 +440,7 @@ class ControlService:
         if plugin.get("companyId"):
             probes = probe_drives(plugin)
             if any(not p["mappingMatches"] for p in probes):
-                raise ValueError("请先通过公司 NAS 远程连接模块确认两台 NAS 的凭据并连接四个盘，再修复 Codex 访问")
+                raise ValueError("部分盘符尚未映射，或目标不属于已配置的局域网/Tailscale 地址。请先通过公司 NAS 连接模块确认凭据并连接；现有映射不会被覆盖")
             mappings = [{"ok": True} for p in probes]
         else:
             mappings = ensure_mappings(plugin)
@@ -455,11 +463,15 @@ class ControlService:
         if failed_tests:
             summary = "、".join(item["letter"] for item in failed_tests)
             raise RuntimeError(f"配置已保存，但 {summary} 盘读写回环测试失败")
-        restart_note = "；请重启 Windows 和 Codex" if linked["restartRequired"] else "；请重启 Codex"
+        codex_restart = bool(permissions.get("changed"))
+        windows_restart = bool(linked.get("restartRequired"))
+        restart_note = ("；跨权限映射刚启用，请重启 Windows 后再验证" if windows_restart else
+                        "；Codex 配置刚修改，请重启 Codex 后生效" if codex_restart else
+                        "；本次未改动配置，无需因本次操作重启 Codex")
         return {
             "message": f"{len(tests)} 个现有网络盘通过创建、读回和清理测试{restart_note}",
             "configBackup": permissions.get("backup"),
-            "restartRequired": True,
+            "restartRequired": codex_restart or windows_restart,
         }
 
 
@@ -473,6 +485,10 @@ class ControlService:
         else:
             detail = self._codex_proxy_status(plugin)
         actions = [dict(item) for item in plugin.get("uiActions", [])]
+        if plugin["handler"] == "network_drive_access" and detail.get("running"):
+            for item in actions:
+                if item.get("id") == "repair":
+                    item["label"] = "验证访问"
         if detail.get("recoveryAvailable"):
             for action in actions:
                 if action.get("id") == "toggle_enabled":
@@ -731,6 +747,12 @@ class ControlService:
             self._recover_keep_alive(plugin)
 
     def _process_action(self, plugin: dict[str, Any], action: str, payload: dict[str, Any]) -> str:
+        if plugin.get("companyId") and action in {"start", "restart"}:
+            self.company_access.refresh_connector()
+            folder = self.company_access.payload_root()
+            if folder is None:
+                raise ValueError("公司模块激活记录无效，请重新导入公司文件")
+            plugin["executable"] = str(folder / "NasRemoteConnect.exe")
         exe = expand_path(plugin["executable"])
         if action == "toggle_enabled":
             return self._toggle_enabled(plugin, exe)
