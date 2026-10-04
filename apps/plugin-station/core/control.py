@@ -268,7 +268,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.17.5",
+                "version": "0.17.6",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },
