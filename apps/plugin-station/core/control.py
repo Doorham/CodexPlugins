@@ -35,6 +35,7 @@ from .workbuddy_chime import (
 )
 from .wininet_proxy import apply_proxy_bypass
 from .updream_bridge import generate_image as generate_updream_image
+from .source_build import build_voice_bridge
 from .company_access import CompanyAccess, COMPANY_ID
 from .company_drives import (config_status as network_config_status, enable_linked_connections, ensure_full_access_default, ensure_mappings, expected_drives, linked_connections_enabled, probe_drives, write_test as network_write_test)
 
@@ -851,6 +852,8 @@ class ControlService:
                     raise ValueError("插件安装源必须位于 artifacts/helpers")
                 if source.name.lower() != exe.name.lower():
                     raise ValueError("插件安装源文件名与目标程序不一致")
+                if not source.is_file() and plugin["id"] == "wetype-awesun-bridge":
+                    build_voice_bridge(self.repo_root, source)
                 if not source.is_file():
                     raise FileNotFoundError(f"构建产物不存在，请运行相应模块的构建脚本：{source}")
                 if not exe.exists() or hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(exe.read_bytes()).digest():
