@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.17.2"
+APP_VERSION = "0.17.3"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
 INSTANCE_VERSION_MARKER = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "CompanyAIHelpers" / "CodexTools" / "plugin-station-version.txt"
@@ -170,6 +170,16 @@ def main() -> int:
 
         def perform_action(self, plugin_id: str, action: str, payload=None):
             return self._service.perform_action(plugin_id, action, payload or {}, origin="ui")
+
+        def import_company_json(self):
+            paths = APP_WINDOW.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=("Company guide (*.json)",),
+            )
+            if not paths:
+                return {"ok": False, "cancelled": True, "message": "已取消导入"}
+            return self._service.import_company_guide(paths[0])
 
         def choose_sound_file(self):
             paths = APP_WINDOW.create_file_dialog(

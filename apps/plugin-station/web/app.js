@@ -237,6 +237,28 @@ async function deleteDomain(domain, button) {
   }
 }
 
+document.getElementById('importCompanyJson').onclick = async () => {
+  const button = document.getElementById('importCompanyJson');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = '正在导入…';
+  try {
+    const result = await window.pywebview.api.import_company_json();
+    if (result.cancelled) return;
+    if (result.ok) {
+      state.page = 'company';
+      state.filter = '全部';
+      await refresh(true, true);
+    }
+    showToast(result.message, !result.ok);
+  } catch (_) {
+    showToast('导入未完成，请检查公司 JSON 文件和工具箱安装。', true);
+  } finally {
+    button.disabled = false;
+    button.textContent = '导入 JSON';
+  }
+};
+
 document.getElementById('refreshButton').onclick = () => refresh();
 document.getElementById('updateButton').onclick = async () => {
   const button = document.getElementById('updateButton');

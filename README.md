@@ -108,10 +108,6 @@ git diff --check
 
 ## 公司可选模块（0.17.1 起）
 
-两个公司模块默认隐藏。公司内部提供一个私有 JSON 引导文件，先将副本放在本机，再让 Codex 使用工具箱配套 Python 导入：
+两个公司模块默认隐藏。0.17.3 起，点击工具箱顶部的“导入 JSON”，选择公司内部提供的引导文件副本，即可在当前窗口启用两个模块；无需 PowerShell 或重新启动。
 
-```powershell
-.\.runtime\venv\Scripts\python.exe .\apps\plugin-station\agent_cli.py import-company-guide "收到的引导文件路径"
-```
-
-引导文件包含内部连接配置，不要提交到此仓库。导入只启用模块；随后打开工具箱的“公司模块”，由用户点击连接并完成官方 Tailscale 授权和两台 NAS 的凭据确认。不会覆盖已有不同目标的盘符，不保存密码。详细说明见 [公司模块导入](docs/COMPANY-MODULES.md)。
+引导文件含内部连接配置，不要提交到此仓库。取消或无效文件不改变原配置；成功导入不会自动连接。随后进入“公司模块”，由用户点击连接并完成官方 Tailscale 授权和两台 NAS 的凭据确认。不会覆盖已有不同目标的盘符，不保存密码。详细说明见 [公司模块导入](docs/COMPANY-MODULES.md)。
