@@ -310,8 +310,37 @@ document.getElementById('domainInput').onkeydown = event => {
 document.getElementById('domainModal').onclick = event => {
   if (event.target.id === 'domainModal') closeDomainModal();
 };
+function closeQuitModal() {
+  const modal = document.getElementById('quitModal');
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+}
+document.getElementById('quitButton').onclick = () => {
+  const modal = document.getElementById('quitModal');
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden', 'false');
+  document.getElementById('confirmQuit').focus();
+};
+document.getElementById('cancelQuit').onclick = closeQuitModal;
+document.getElementById('quitModal').onclick = event => {
+  if (event.target.id === 'quitModal') closeQuitModal();
+};
+document.getElementById('confirmQuit').onclick = async () => {
+  const button = document.getElementById('confirmQuit');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = '正在退出…';
+  try {
+    await window.pywebview.api.window_action('quit');
+  } catch (_) {
+    button.disabled = false;
+    button.textContent = '完全退出';
+    showToast('退出未完成，请重试。', true);
+  }
+};
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && document.getElementById('domainModal').classList.contains('show')) closeDomainModal();
+  if (event.key === 'Escape' && document.getElementById('quitModal').classList.contains('show')) closeQuitModal();
 });
 document.querySelectorAll('[data-window]').forEach(button => button.onclick = () =>
   window.pywebview.api.window_action(button.dataset.window)

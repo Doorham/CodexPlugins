@@ -13,7 +13,8 @@
     <div class="window-controls">
       <button data-window="minimize" title="最小化">—</button>
       <button data-window="maximize" title="最大化">□</button>
-      <button data-window="hide" class="window-close" title="隐藏到后台">×</button>
+      <button data-window="hide" class="window-hide" title="隐藏到后台，不退出">隐藏</button>
+      <button id="quitButton" class="window-quit" title="结束工具箱后台进程">完全退出</button>
     </div>
   </header>
   <main>
@@ -70,6 +71,17 @@
       <div id="domainList" class="domain-list"></div>
       <div class="modal-actions">
         <button id="cancelDomain" class="action secondary">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="quitModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal quit-modal" role="dialog" aria-modal="true" aria-labelledby="quitTitle">
+      <span class="modal-kicker">退出程序</span>
+      <h2 id="quitTitle">完全退出 Codex 工具箱？</h2>
+      <p>工具箱窗口和后台进程会结束。已启动的其他助手、Tailscale 和 NAS 连接不会因此停止。下次从桌面快捷方式正常打开，不要选择“以管理员身份运行”。</p>
+      <div class="modal-actions">
+        <button id="cancelQuit" class="action secondary">继续使用</button>
+        <button id="confirmQuit" class="action primary">完全退出</button>
       </div>
     </div>
   </div>
