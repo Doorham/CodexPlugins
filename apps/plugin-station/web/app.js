@@ -310,12 +310,25 @@ document.getElementById('domainInput').onkeydown = event => {
 document.getElementById('domainModal').onclick = event => {
   if (event.target.id === 'domainModal') closeDomainModal();
 };
+function closeWindowMenu() {
+  document.getElementById('windowMenu').hidden = true;
+  document.getElementById('moreButton').setAttribute('aria-expanded', 'false');
+}
+document.getElementById('moreButton').onclick = () => {
+  const menu = document.getElementById('windowMenu');
+  menu.hidden = !menu.hidden;
+  document.getElementById('moreButton').setAttribute('aria-expanded', String(!menu.hidden));
+};
+document.addEventListener('click', event => {
+  if (!event.target.closest('#moreButton, #windowMenu')) closeWindowMenu();
+});
 function closeQuitModal() {
   const modal = document.getElementById('quitModal');
   modal.classList.remove('show');
   modal.setAttribute('aria-hidden', 'true');
 }
 document.getElementById('quitButton').onclick = () => {
+  closeWindowMenu();
   const modal = document.getElementById('quitModal');
   modal.classList.add('show');
   modal.setAttribute('aria-hidden', 'false');
@@ -339,6 +352,7 @@ document.getElementById('confirmQuit').onclick = async () => {
   }
 };
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeWindowMenu();
   if (event.key === 'Escape' && document.getElementById('domainModal').classList.contains('show')) closeDomainModal();
   if (event.key === 'Escape' && document.getElementById('quitModal').classList.contains('show')) closeQuitModal();
 });

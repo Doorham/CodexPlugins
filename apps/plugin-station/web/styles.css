@@ -15,12 +15,14 @@ main { position: relative; height: calc(100% - 38px); overflow-y: auto; max-widt
 .window-bar { position: fixed; inset: 1px 1px auto; z-index: 20; height: 38px; display: flex; align-items: center; justify-content: space-between; padding-left: 15px; background: rgba(13,15,20,.97); border-bottom: 1px solid var(--line); border-radius: 13px 13px 0 0; }
 .window-title { color: #d9dde5; font-size: 11px; font-weight: 650; letter-spacing: .04em; }
 .window-title span { margin-left: 7px; color: #697080; font: 10px Consolas, monospace; }
-.window-controls { align-self: stretch; display: flex; -webkit-app-region: no-drag; }
+.window-controls { position: relative; align-self: stretch; display: flex; -webkit-app-region: no-drag; }
 .window-controls button { width: 44px; border: 0; color: #a9afba; background: transparent; cursor: pointer; font-size: 14px; }
 .window-controls button:hover { color: white; background: rgba(255,255,255,.08); }
-.window-controls .window-hide { width: 52px; font-size: 11px; }
-.window-controls .window-quit { width: auto; padding: 0 14px; border-left: 1px solid var(--line); color: #fda4af; font-size: 11px; font-weight: 700; }
-.window-controls .window-quit:hover { background: #9f2433; color: white; }
+.window-controls .window-close:hover { background: #d92d3a; }
+.window-controls .window-more { font-size: 20px; line-height: 1; }
+.window-menu { position: absolute; top: 38px; right: 44px; width: 170px; padding: 6px; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; background: #1b1e27; box-shadow: 0 16px 45px rgba(0,0,0,.45); }
+.window-controls .window-menu button { width: 100%; height: 34px; padding: 0 11px; border-radius: 6px; text-align: left; color: #d5d9e2; font-size: 11px; }
+.window-controls .window-menu button:hover { background: rgba(255,255,255,.1); }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 14px; }
 .brand-mark { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: #f1f3f5; color: #0c0e12; font-weight: 900; font-size: 21px; box-shadow: 0 8px 30px rgba(255,255,255,.08); }
