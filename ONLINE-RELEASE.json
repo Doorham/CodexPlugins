@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.18.1",
+  "version": "0.19.2",
   "license": "Apache-2.0",
   "developers": [
     "Doorham",
@@ -91,6 +91,13 @@
       "developers": [
         "Althy",
         "Doorham"
+      ]
+    },
+    {
+      "id": "wetype-awesun-bridge",
+      "version": "1.0.2",
+      "developers": [
+        "Althy"
       ]
     }
   ],

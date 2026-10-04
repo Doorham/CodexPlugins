@@ -7,6 +7,8 @@ if (-not (Test-Path -LiteralPath $csc)) { throw "C# compiler not found: $csc" }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 
 $clipboardSource = Join-Path $repoRoot 'helpers\updream-clipboard-cleaner\src\Program.cs'
+$voiceBridgeSource = Join-Path $repoRoot 'helpers\wetype-awesun-bridge\src\Program.cs'
+$voiceBridgeIcon = Join-Path $repoRoot 'helpers\wetype-awesun-bridge\assets\voice.ico'
 $chimeSource = Join-Path $repoRoot 'helpers\codex-answer-chime\src\Program.cs'
 $arctisGateSource = Join-Path $repoRoot 'helpers\arctis-nova-5-startup-gate\src\Program.cs'
 $arctisMonitorSource = Join-Path $repoRoot 'helpers\arctis-nova-5-battery-monitor\src\Program.cs'
@@ -26,6 +28,9 @@ $testSource = Join-Path $repoRoot 'tests\clipboard-verification\Program.cs'
 
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\UpdreamClipboardCleaner.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll $clipboardSource
 if ($LASTEXITCODE -ne 0) { throw 'Updream Clipboard Cleaner build failed.' }
+
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\WeTypeAweSunBridge.exe" "/win32icon:$voiceBridgeIcon" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $voiceBridgeSource
+if ($LASTEXITCODE -ne 0) { throw 'WeType AweSun Bridge build failed.' }
 
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\CodexAnswerChime.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll $chimeSource
 if ($LASTEXITCODE -ne 0) { throw 'Codex Answer Chime build failed.' }

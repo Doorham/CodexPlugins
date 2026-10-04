@@ -177,6 +177,7 @@ try {
     $helpersUpdated = @()
     if ($helperChanged) {
         if (Install-BuiltHelper 'UpdreamClipboardCleaner.exe' 'UpdreamClipboardCleaner' 'UpdreamClipboardCleaner' $remoteHead) { $helpersUpdated += 'UpdreamClipboardCleaner' }
+        if (Install-BuiltHelper 'WeTypeAweSunBridge.exe' 'WeTypeAweSunBridge' 'WeTypeAweSunBridge' $remoteHead) { $helpersUpdated += 'WeTypeAweSunBridge' }
         if (Install-BuiltHelper 'CodexAnswerChime.exe' 'CodexAnswerChime' 'CodexAnswerChime' $remoteHead) { $helpersUpdated += 'CodexAnswerChime' }
         if (Install-BuiltHelper 'ArctisNova5BatteryMonitor.exe' 'ArctisNova5BatteryMonitor' 'ArctisNova5BatteryMonitor' $remoteHead) { $helpersUpdated += 'ArctisNova5BatteryMonitor' }
         Install-BuiltHelper 'ArctisNova5StartupGate.exe' 'ArctisNova5BatteryMonitor' '' $remoteHead | Out-Null

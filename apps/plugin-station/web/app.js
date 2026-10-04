@@ -5,6 +5,14 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 }
 
+function renderPluginIcon(value) {
+  const icon = String(value ?? '');
+  if (/^assets\/plugin-icons\/[a-z0-9-]+\.svg$/.test(icon)) {
+    return `<img class="plugin-icon-image" src="${escapeHtml(icon)}" alt="" />`;
+  }
+  return escapeHtml(icon);
+}
+
 function showToast(message, error = false) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
@@ -57,7 +65,7 @@ function card(plugin) {
   </div>` : '';
   return `<article class="card ${plugin.metric ? 'has-metric' : ''}" style="--accent:${escapeHtml(plugin.accent)}">
     <div class="card-head">
-      <div class="plugin-icon">${escapeHtml(plugin.icon)}</div>
+      <div class="plugin-icon">${renderPluginIcon(plugin.icon)}</div>
       <div class="status"><span class="status-dot ${plugin.running ? 'on' : ''}"></span>${escapeHtml(plugin.statusText)}</div>
     </div>
     <h3>${escapeHtml(plugin.name)}</h3>

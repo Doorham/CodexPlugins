@@ -1,0 +1,37 @@
+{
+  "id": "wetype-awesun-bridge",
+  "name": "微信语音输入远程状态监听板",
+  "moduleVersion": "1.0.2",
+  "developers": [
+    "Althy"
+  ],
+  "description": "向日葵中的微信语音文字立即复制到剪贴板；切走隐藏承接板，切回重新承接。开启同时运行并开机自启，关闭停止并取消自启。",
+  "category": "剪贴板",
+  "icon": "assets/plugin-icons/wetype-awesun-bridge.svg",
+  "accent": "#1ac785",
+  "mode": "background",
+  "handler": "process_app",
+  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\WeTypeAweSunBridge\\WeTypeAweSunBridge.exe",
+  "installSource": "artifacts/helpers/WeTypeAweSunBridge.exe",
+  "processName": "WeTypeAweSunBridge.exe",
+  "startup": {
+    "type": "run",
+    "name": "WeType AweSun Bridge"
+  },
+  "actions": [
+    "toggle_enabled"
+  ],
+  "uiActions": [
+    {
+      "id": "toggle_enabled",
+      "label": "切换状态",
+      "kind": "toggle"
+    }
+  ],
+  "agentAccess": {
+    "enabled": true,
+    "actions": [
+      "toggle_enabled"
+    ]
+  }
+}
