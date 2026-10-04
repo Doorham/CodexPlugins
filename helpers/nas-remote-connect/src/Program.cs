@@ -23,7 +23,7 @@ public class DriveSpec { public string letter; public string remote; public stri
 public class ModuleConfig { public DriveSpec[] drives; public string defaultUser; }
 public sealed class NasRemoteConnect : Form
 {
-    enum ConnectionMode { Auto, Lan, Tailscale }
+    enum ConnectionMode { Lan, Tailscale }
     const string Installer = "tailscale-setup-1.102.4.exe";
     const string InstallerHash = "DC874BB9DB4A93E1E412F44ED629EC4B432AE24C7322F9D51D445B15A852A9E5";
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
@@ -32,7 +32,6 @@ public sealed class NasRemoteConnect : Form
     readonly Button connect = new Button();
     readonly Button install = new Button();
     readonly Button check = new Button();
-    readonly RadioButton automaticMode = new RadioButton();
     readonly RadioButton lanMode = new RadioButton();
     readonly RadioButton tailscaleMode = new RadioButton();
     readonly Label[] driveStates = new Label[4];
@@ -61,7 +60,7 @@ public sealed class NasRemoteConnect : Form
                 Type shellType = Type.GetTypeFromProgID("Shell.Application");
                 object shell = Activator.CreateInstance(shellType);
                 shellType.InvokeMember("ShellExecute", System.Reflection.BindingFlags.InvokeMethod, null, shell,
-                    new object[] { Application.ExecutablePath, (args.Contains("--connect") ? "--connect " : "") + "--unelevated", Root, "open", 1 });
+                    new object[] { Application.ExecutablePath, "--unelevated", Root, "open", 1 });
                 Marshal.FinalReleaseComObject(shell);
                 return;
             }
@@ -69,7 +68,7 @@ public sealed class NasRemoteConnect : Form
                 if (!gate.WaitOne(0)) { MessageBox.Show("连接窗口已经打开，请切回该窗口。", "连接公司 NAS"); return; }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new NasRemoteConnect(args.Contains("--connect")));
+                Application.Run(new NasRemoteConnect());
                 gate.ReleaseMutex();
             }
         } catch (Exception e) {
@@ -80,7 +79,7 @@ public sealed class NasRemoteConnect : Form
         }
     }
 
-    NasRemoteConnect(bool autoConnect, bool preview = false)
+    NasRemoteConnect(bool preview = false)
     {
         Text = "公司 NAS · 连接中心"; ClientSize = new Size(960, 650);
         MinimumSize = new Size(820, 580); StartPosition = FormStartPosition.CenterScreen;
@@ -89,19 +88,15 @@ public sealed class NasRemoteConnect : Form
         var hint = new Label { Text = "先查看每个盘的映射入口，再选择本次连接方式。已有映射不会被悄悄切换。", AutoSize = true, Location = new Point(28, 74), ForeColor = Color.FromArgb(153, 168, 190) };
         var modeTitle = new Label { Text = "本次连接方式", AutoSize = true, Location = new Point(28, 117), Font = new Font(Font.FontFamily, 10, FontStyle.Bold) };
         var modeBar = new TableLayoutPanel { Location = new Point(26, 145), Size = new Size(908, 55), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            ColumnCount = 3, RowCount = 1, BackColor = Color.FromArgb(24, 32, 48), Padding = new Padding(5) };
-        modeBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34));
-        modeBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
-        modeBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
-        ConfigureMode(automaticMode, "自动 · 优先局域网");
+            ColumnCount = 2, RowCount = 1, BackColor = Color.FromArgb(24, 32, 48), Padding = new Padding(5) };
+        modeBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        modeBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         ConfigureMode(lanMode, "只用局域网");
         ConfigureMode(tailscaleMode, "只用 Tailscale");
-        modeBar.Controls.Add(automaticMode, 0, 0); modeBar.Controls.Add(lanMode, 1, 0); modeBar.Controls.Add(tailscaleMode, 2, 0);
-        automaticMode.Checked = true;
-        var modeHint = new Label { Text = "自动模式保留已连接通道，只为缺失盘符选择可达地址。", AutoSize = true, Location = new Point(28, 211), ForeColor = Color.FromArgb(153, 168, 190) };
-        automaticMode.CheckedChanged += delegate { if (automaticMode.Checked) modeHint.Text = "自动模式保留已连接通道，只为缺失盘符选择可达地址。"; };
-        lanMode.CheckedChanged += delegate { if (lanMode.Checked) modeHint.Text = "只用局域网：已有 Tailscale 映射需要确认后才能切换。"; };
-        tailscaleMode.CheckedChanged += delegate { if (tailscaleMode.Checked) modeHint.Text = "只用 Tailscale 地址；同网时底层仍可能直连，要测试外网请离开局域网。"; };
+        modeBar.Controls.Add(lanMode, 0, 0); modeBar.Controls.Add(tailscaleMode, 1, 0);
+        var modeHint = new Label { Text = "必须先选一种连接方式；查看状态不会连接或切换盘符。", AutoSize = true, Location = new Point(28, 211), ForeColor = Color.FromArgb(153, 168, 190) };
+        lanMode.CheckedChanged += delegate { if (lanMode.Checked) modeHint.Text = "局域网地址：已有 Tailscale 映射需确认后才能切换。"; if (!busy) connect.Enabled = SelectedMode().HasValue; };
+        tailscaleMode.CheckedChanged += delegate { if (tailscaleMode.Checked) modeHint.Text = "Tailscale 地址：即使身处局域网也使用此入口；切换已有盘符需确认。"; if (!busy) connect.Enabled = SelectedMode().HasValue; };
         var driveTitle = new Label { Text = "当前盘符与映射入口", AutoSize = true, Location = new Point(28, 247), Font = new Font(Font.FontFamily, 10, FontStyle.Bold) };
         var driveGrid = new TableLayoutPanel { Location = new Point(22, 274), Size = new Size(916, 81), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             ColumnCount = 4, RowCount = 1 };
@@ -116,6 +111,7 @@ public sealed class NasRemoteConnect : Form
         install.Text = "安装 Tailscale"; install.SetBounds(248, 370, 188, 43);
         check.Text = "刷新状态"; check.SetBounds(448, 370, 145, 43);
         StyleButton(connect, true); StyleButton(install, false); StyleButton(check, false);
+        connect.Enabled = false;
         var activity = new Label { Text = "操作记录", AutoSize = true, Location = new Point(28, 432), Font = new Font(Font.FontFamily, 10, FontStyle.Bold) };
         output.Multiline = true; output.ReadOnly = true; output.ScrollBars = ScrollBars.Vertical;
         output.SetBounds(26, 463, 908, 160); output.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -128,7 +124,7 @@ public sealed class NasRemoteConnect : Form
         FormClosing += delegate(object sender, FormClosingEventArgs e) {
             if (busy) { e.Cancel = true; Log("操作进行中，请等待结束；安装程序不会被强制中止。"); }
         };
-        Shown += async delegate { if (preview) return; Log("先选择通道再连接；刷新状态不会修改盘符。"); if (autoConnect) await RunAsync(false, false); else await RunAsync(false, true); };
+        Shown += async delegate { if (preview) return; Log("先选择局域网或 Tailscale；查看状态不会连接或切换盘符。"); await RunAsync(false, true); };
     }
 
     static void ConfigureMode(RadioButton button, string label)
@@ -146,7 +142,7 @@ public sealed class NasRemoteConnect : Form
         button.ForeColor = Color.White; button.Font = new Font("Microsoft YaHei UI", 9, FontStyle.Bold);
         button.Cursor = Cursors.Hand;
     }
-    ConnectionMode SelectedMode() { return tailscaleMode.Checked ? ConnectionMode.Tailscale : lanMode.Checked ? ConnectionMode.Lan : ConnectionMode.Auto; }
+    ConnectionMode? SelectedMode() { return tailscaleMode.Checked ? ConnectionMode.Tailscale : lanMode.Checked ? ConnectionMode.Lan : (ConnectionMode?)null; }
 
     void Log(string line)
     {
@@ -158,16 +154,17 @@ public sealed class NasRemoteConnect : Form
     async Task RunAsync(bool installOnly, bool checkOnly)
     {
         if (busy) return;
-        ConnectionMode mode = SelectedMode();
+        ConnectionMode? mode = SelectedMode();
+        if (!installOnly && !checkOnly && !mode.HasValue) { Log("请先明确选择局域网或 Tailscale。"); return; }
         busy = true; connect.Enabled = install.Enabled = check.Enabled = false;
-        automaticMode.Enabled = lanMode.Enabled = tailscaleMode.Enabled = false;
+        lanMode.Enabled = tailscaleMode.Enabled = false;
         try {
             await Task.Run(delegate {
                 var drives = LoadDrives();
                 if (checkOnly) { Check(drives); UpdateDriveCards(drives); return; }
                 if (installOnly) { EnsureInstalled(); Log("Tailscale 已安装；选择通道后点击“按所选通道连接”。"); UpdateDriveCards(drives); return; }
                 var current = CurrentMappings(drives);
-                var selected = SelectConnectionDrives(drives, current, Reachable, mode);
+                var selected = SelectConnectionDrives(drives, current, mode.Value);
                 var changes = selected.Where(d => !SameRemote(current[d.letter], d.remote)).ToArray();
                 foreach (var d in drives) Log(d.letter + ": 当前" + RouteName(d, current[d.letter]) + "，本次选择" + RouteName(d, selected.Single(s => s.letter == d.letter).remote) + "。");
                 if (changes.Length == 0) { CheckExisting(drives); Log("现有盘符已符合所选通道，没有断开或新建映射。"); UpdateDriveCards(drives); return; }
@@ -205,8 +202,9 @@ public sealed class NasRemoteConnect : Form
         } catch (Exception e) { Log("未完成：" + e.Message); }
         finally {
             try { UpdateDriveCards(LoadDrives()); } catch (Exception) { }
-            busy = false; connect.Enabled = install.Enabled = check.Enabled = true;
-            automaticMode.Enabled = lanMode.Enabled = tailscaleMode.Enabled = true;
+            busy = false; install.Enabled = check.Enabled = true;
+            lanMode.Enabled = tailscaleMode.Enabled = true;
+            connect.Enabled = SelectedMode().HasValue;
         }
     }
 
@@ -414,7 +412,7 @@ public sealed class NasRemoteConnect : Form
     static void PreviewUi()
     {
         Application.EnableVisualStyles();
-        using (var form = new NasRemoteConnect(false, true)) using (var bitmap = new Bitmap(form.Width, form.Height)) {
+        using (var form = new NasRemoteConnect(true)) using (var bitmap = new Bitmap(form.Width, form.Height)) {
             form.Opacity = 0.01; form.Show(); Application.DoEvents();
             form.SetDriveCards(new[] { "局域网", "局域网", "Tailscale 地址", "未连接" });
             form.Log("W: 局域网 · 可以打开。");
@@ -444,17 +442,11 @@ public sealed class NasRemoteConnect : Form
     {
         return actual != null && new[] { drive.remote, drive.lanRemote }.Any(r => r != null && string.Equals(actual.TrimEnd('\\'), r.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
     }
-    static DriveSpec[] SelectConnectionDrives(DriveSpec[] drives, IDictionary<string, string> current, Func<string, bool> reachable)
-    {
-        return SelectConnectionDrives(drives, current, reachable, ConnectionMode.Auto);
-    }
-    static DriveSpec[] SelectConnectionDrives(DriveSpec[] drives, IDictionary<string, string> current, Func<string, bool> reachable, ConnectionMode mode)
+    static DriveSpec[] SelectConnectionDrives(DriveSpec[] drives, IDictionary<string, string> current, ConnectionMode mode)
     {
         Plan(drives, current);
         return drives.Select(d => new DriveSpec { letter = d.letter,
-            remote = mode == ConnectionMode.Tailscale ? d.remote
-                : mode == ConnectionMode.Lan ? LanTarget(d)
-                : current[d.letter] ?? (d.lanRemote != null && reachable(Host(d.lanRemote)) ? d.lanRemote : d.remote),
+            remote = mode == ConnectionMode.Tailscale ? d.remote : LanTarget(d),
             lanRemote = d.lanRemote }).ToArray();
     }
     static string LanTarget(DriveSpec drive)
@@ -607,28 +599,33 @@ public sealed class NasRemoteConnect : Form
     }
     static void CompatibilityWorkflowTest()
     {
+        using (var form = new NasRemoteConnect(true)) {
+            if (form.SelectedMode().HasValue || form.connect.Enabled) throw new Exception("Connection was enabled before an explicit route choice");
+            form.tailscaleMode.Checked = true;
+            if (form.SelectedMode() != ConnectionMode.Tailscale || !form.connect.Enabled) throw new Exception("Explicit Tailscale choice was not enabled");
+        }
         if (ShouldRelaunchUnelevated(true, false) || ShouldRelaunchUnelevated(false, true) || !ShouldRelaunchUnelevated(true, true))
             throw new Exception("UAC compatibility failed");
         var drives = new[] { new DriveSpec { letter = "W", remote = @"\\remote.example\share", lanRemote = @"\\lan.example\share" } };
         var existing = new Dictionary<string, string> { { "W", @"\\LAN.example\SHARE" } };
-        if (Plan(drives, existing).Count != 0 || SelectConnectionDrives(drives, existing, h => false)[0].remote != existing["W"])
-            throw new Exception("Existing approved LAN mapping was changed");
+        if (Plan(drives, existing).Count != 0 || SelectConnectionDrives(drives, existing, ConnectionMode.Lan)[0].remote != drives[0].lanRemote)
+            throw new Exception("Explicit LAN choice changed an existing approved LAN mapping");
         existing["W"] = @"\\unknown.example\share";
         bool refused = false; try { Plan(drives, existing); } catch { refused = true; }
         if (!refused) throw new Exception("Unknown server was accepted by share name");
         existing["W"] = null;
-        var lan = SelectConnectionDrives(drives, existing, h => true);
-        var remote = SelectConnectionDrives(drives, existing, h => false);
+        var lan = SelectConnectionDrives(drives, existing, ConnectionMode.Lan);
+        var remote = SelectConnectionDrives(drives, existing, ConnectionMode.Tailscale);
         if (lan[0].remote != drives[0].lanRemote || NeedsRemoteAccess(drives, lan, existing)
             || remote[0].remote != drives[0].remote || !NeedsRemoteAccess(drives, remote, existing))
             throw new Exception("LAN/remote selection failed");
         existing["W"] = drives[0].lanRemote;
-        var forcedRemote = SelectConnectionDrives(drives, existing, h => true, ConnectionMode.Tailscale);
+        var forcedRemote = SelectConnectionDrives(drives, existing, ConnectionMode.Tailscale);
         if (forcedRemote[0].remote != drives[0].remote || !NeedsRemoteAccess(drives, forcedRemote, existing)
             || RouteName(drives[0], existing["W"]) != "局域网")
             throw new Exception("Forced Tailscale route or actual route reporting failed");
         existing["W"] = drives[0].remote;
-        var forcedLan = SelectConnectionDrives(drives, existing, h => false, ConnectionMode.Lan);
+        var forcedLan = SelectConnectionDrives(drives, existing, ConnectionMode.Lan);
         if (forcedLan[0].remote != drives[0].lanRemote || RouteName(drives[0], existing["W"]) != "Tailscale 地址")
             throw new Exception("Forced LAN route failed");
     }

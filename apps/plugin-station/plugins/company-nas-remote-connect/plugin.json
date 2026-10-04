@@ -1,13 +1,13 @@
 {
   "id": "company-nas-remote-connect",
   "name": "公司 NAS 远程连接",
-  "moduleVersion": "1.2.0",
+  "moduleVersion": "1.2.1",
   "developers": [
     "Althy",
     "Doorham"
   ],
   "companyId": "wanling-media",
-  "description": "逐盘显示实际连接通道；可选择自动、局域网或 Tailscale，切换已有映射需确认，创建映射前需确认 NAS 凭据。",
+  "description": "逐盘显示实际连接通道；连接前必须明确选择局域网或 Tailscale，切换已有映射需确认，创建映射前需确认 NAS 凭据。",
   "category": "万灵传媒",
   "icon": "▦",
   "accent": "#38bdf8",
