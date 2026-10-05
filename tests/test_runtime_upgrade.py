@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -109,6 +110,51 @@ class RuntimeUpgradeTests(unittest.TestCase):
                     self.assertEqual((other / 'settings.json').read_text(), '{"fixture":1}')
 
     @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
+    def test_hidden_fixture_window_closes_gracefully_without_touching_other_processes(self):
+        body = (ROOT / 'scripts/auto-migrate-runtime.ps1').read_text(encoding='utf-8-sig')
+        native = re.search(r"Add-Type -TypeDefinition @'\n(.*?)\n'@", body, re.S).group(1)
+        environment = dict(os.environ)
+        environment.pop('PSModulePath', None)
+        with tempfile.TemporaryDirectory() as folder:
+            ready = Path(folder) / 'ready.json'
+            child_script = Path(folder) / 'hidden-fixture.ps1'
+            child_script.write_text("""Add-Type -AssemblyName System.Windows.Forms
+$ErrorActionPreference='Stop'
+$f=New-Object Windows.Forms.Form
+$f.Text='Synthetic migration test'
+$f.add_FormClosed({[Windows.Forms.Application]::ExitThread()})
+$f.Show();$f.Hide()
+[IO.File]::WriteAllText('""" + str(ready).replace("'", "''") + """',
+    ('{"pid":'+$PID+',"visible":'+$f.Visible.ToString().ToLower()+'}'))
+[Windows.Forms.Application]::Run()
+""", encoding='utf-8-sig')
+            child = subprocess.Popen([str(PS), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(child_script)],
+                                     env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     creationflags=subprocess.CREATE_NO_WINDOW)
+            try:
+                deadline = time.monotonic() + 10
+                while not ready.exists() and time.monotonic() < deadline:
+                    if child.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                self.assertTrue(ready.exists(), child.communicate(timeout=2)[1].decode(errors='replace')
+                                if child.poll() is not None else 'Synthetic window did not become ready')
+                data = json.loads(ready.read_text())
+                self.assertEqual(data['pid'], child.pid)
+                self.assertFalse(data['visible'])
+                command = "Add-Type -TypeDefinition @'\n" + native + "\n'@\n" + \
+                          '[ToolboxUpgradeWindows]::CloseOwned(' + str(child.pid) + ')'
+                result = subprocess.run([str(PS), '-NoProfile', '-Command', command], env=environment,
+                                        capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+                self.assertEqual(child.wait(timeout=10), 0)
+            finally:
+                if child.poll() is None:
+                    child.terminate()  # Only this test's synthetic child.
+                    child.wait(timeout=10)
+                child.communicate(timeout=2)
+
+    @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
     def test_real_one_shot_worker_uses_only_synthetic_fixture_and_removes_task(self):
         # The actual scheduled worker runs only fixture phases; no real private
         # data, NAS, startup settings, application windows or launchers touched.
@@ -142,7 +188,11 @@ exit 0
             self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
             deadline = time.monotonic() + 35
             while time.monotonic() < deadline:
-                state = json.loads(state_path.read_text(encoding='utf-8-sig'))
+                try:
+                    state = json.loads(state_path.read_text(encoding='utf-8-sig'))
+                except PermissionError:  # Windows atomic replacement holds a brief exclusive handle.
+                    time.sleep(0.02)
+                    continue
                 if state['state'] in ('complete', 'failed'):
                     break
                 time.sleep(0.2)
@@ -150,7 +200,7 @@ exit 0
             for phase in ('Stage','Finalize'):
                 self.assertTrue((repo / '.runtime/migration-backups/runtime-move-20000101-000000' / (phase + '.txt')).exists())
             # Allow the worker's finally block to remove its own temporary task.
-            time.sleep(0.5)
+            time.sleep(1)
             command = "$s=New-Object -ComObject Schedule.Service;$s.Connect();$f=$s.GetFolder('\\');" + \
                       "$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;" + \
                       "try{$null=$f.GetTask('CompanyAIHelpers.RuntimeMigration.'+$sid+'." + request_id + "');exit 1}catch{exit 0}"

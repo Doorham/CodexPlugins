@@ -87,6 +87,26 @@ try {
         $form.Controls.Add($label); $form.Show()
         [Windows.Forms.Application]::DoEvents()
     }
+    # EnumWindows includes hidden warm windows, unlike MainWindowHandle.
+    # WM_CLOSE is graceful: never terminate an unresponsive process.
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ToolboxUpgradeWindows {
+    private delegate bool EnumProc(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr data);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    public static void CloseOwned(uint processId) {
+        EnumWindows(delegate(IntPtr window, IntPtr data) {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner == processId) PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            return true;
+        }, IntPtr.Zero);
+    }
+}
+'@
     # An updating old window may still be warm. Close only a window whose
     # Python executable AND app argument belong to this exact clone/session.
     $app = Join-Path $repoRoot 'apps\plugin-station\app.py'
@@ -100,8 +120,7 @@ try {
             $_.CommandLine -match $appPattern
         })
         foreach ($window in $windows) {
-            $process = Get-Process -Id $window.ProcessId -ErrorAction SilentlyContinue
-            if ($process -and $process.MainWindowHandle) { $process.CloseMainWindow() | Out-Null }
+            [ToolboxUpgradeWindows]::CloseOwned([uint32]$window.ProcessId)
         }
         if (-not $windows.Count) { break }
         if ($form) { [Windows.Forms.Application]::DoEvents() }
