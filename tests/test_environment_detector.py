@@ -28,8 +28,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
         software = json.loads(SOFTWARE_MANIFEST.read_text(encoding="utf-8"))
         codex = json.loads(CODEX_MANIFEST.read_text(encoding="utf-8"))
 
-        self.assertEqual(software["moduleVersion"], "1.2.0")
-        self.assertEqual(codex["moduleVersion"], "1.2.0")
+        self.assertEqual(software["moduleVersion"], "1.2.1")
+        self.assertEqual(codex["moduleVersion"], "1.2.1")
         self.assertEqual(software["executable"], codex["executable"])
         self.assertEqual(software["installSource"], codex["installSource"])
         self.assertEqual(software["processName"], "EnvironmentDetector.exe")
@@ -44,8 +44,8 @@ class EnvironmentDetectorTests(unittest.TestCase):
     def test_release_index_lists_both_public_modules(self) -> None:
         release = json.loads((ROOT / "ONLINE-RELEASE.json").read_text(encoding="utf-8"))
         versions = {item["id"]: item["version"] for item in release["modules"]}
-        self.assertEqual(versions["software-environment-checker"], "1.2.0")
-        self.assertEqual(versions["codex-environment-helper"], "1.2.0")
+        self.assertEqual(versions["software-environment-checker"], "1.2.1")
+        self.assertEqual(versions["codex-environment-helper"], "1.2.1")
 
     def test_process_handler_passes_reviewed_start_arguments_without_shell(self) -> None:
         service = object.__new__(ControlService)
@@ -206,10 +206,10 @@ class EnvironmentDetectorTests(unittest.TestCase):
             self.assertIn("UTF8_BACKUP_FORMAT=PASS", scenario_text)
             self.assertIn("SYSTEM_CHANGES=0", scenario_text)
             software_text = software_report.read_text(encoding="utf-8")
-            self.assertIn("软件安装检查 v1.2.0", software_text)
+            self.assertIn("软件安装检查 v1.2.1", software_text)
             self.assertNotIn("LibreOffice（无头渲染）", software_text)
             codex_text = codex_report.read_text(encoding="utf-8")
-            self.assertIn("Codex 环境补全 v1.2.0", codex_text)
+            self.assertIn("Codex 环境补全 v1.2.1", codex_text)
             self.assertIn("LibreOffice（无头渲染）", codex_text)
 
 

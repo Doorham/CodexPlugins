@@ -11,7 +11,7 @@ class ArctisMonitorSourceTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "apps/plugin-station/plugins/arctis-nova-5-battery/plugin.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["moduleVersion"], "1.0.2")
+        self.assertEqual(manifest["moduleVersion"], "1.0.3")
         self.assertEqual(manifest["installSource"], "artifacts/helpers/ArctisNova5BatteryMonitor.exe")
         self.assertNotIn("bundle", manifest)
         self.assertTrue((ROOT / "helpers/arctis-nova-5-battery-monitor/src/Program.cs").is_file())

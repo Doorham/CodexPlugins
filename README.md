@@ -24,6 +24,7 @@
 - **安全更新**：只从 GitHub `origin/main` 获取更新，仅允许快进，不覆盖本地改动或自动合并分叉历史。
 - **最小权限**：不读取账号密码、Token、代理订阅、节点或对话正文，也不关闭或切换 VPN 和代理软件。
 - **独立运行**：不依赖公司网络盘、共享路径或内网服务。
+- **路径独立**：工具箱程序、私人配置和缓存统一位于当前克隆的 `.runtime/CompanyAIHelpers`，不进入 Codex 应用目录或缓存，且不提交。
 
 ## 系统要求
 
@@ -56,6 +57,21 @@ Set-Location C:\Works\CodexPlugins
 公开仓库的 clone 和 pull 不要求 GitHub 登录。只有参与开发并推送代码时，才需要使用自己的 Git Credential Manager 或 SSH 身份。
 
 ## 更新
+
+从旧版升级到 0.20.0 时，先迁移本机私人数据，再启动新版；发现旧工具目录时启动检查会提示并停止，避免误用空的新目录。
+
+在旧工具箱“⋯ → 完全退出”中确认退出（× 仅隐藏），从 Windows 开始菜单打开普通权限 PowerShell（不要使用 Codex 内的终端），进入本机克隆目录执行：
+
+```powershell
+$migrationName = 'runtime-move-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+.\scripts\migrate-workspace-runtime.ps1 -Phase Stage -BackupName $migrationName
+if ($LASTEXITCODE -ne 0) { throw '备份失败，请保留旧目录。' }
+.\scripts\migrate-workspace-runtime.ps1 -Phase Finalize -BackupName $migrationName
+if ($LASTEXITCODE -ne 0) { throw '迁移失败，请保留备份。' }
+.\start-plugin-station.vbs
+```
+
+原件与启动项备份留在 `.runtime/migration-backups`。迁移拒绝未知文件和重解析点，不移动 Windows 凭据、Tailscale 登录或 Codex 自身数据，不启用原先关闭的 NAS 自动恢复。
 
 正常启动时会检查 GitHub 更新。也可以在仓库根目录手动执行：
 

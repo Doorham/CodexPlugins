@@ -197,7 +197,8 @@ class CompanyAccessTests(unittest.TestCase):
             service=ControlService(APP)
             originals={json.loads(p.read_text(encoding='utf-8'))['id'] for p in (APP/'plugins').glob('*/plugin.json') if not json.loads(p.read_text(encoding='utf-8')).get('companyId')}
             self.assertEqual(originals,{p['id'] for p in service.plugins.values() if p['_scope']=='shared'})
-            self.assertEqual(len(originals),8)
+            self.assertEqual(len(originals),9)
+            self.assertIn('wetype-awesun-bridge', originals)
             for plugin_id in originals:
                 self.assertTrue(service._company_allowed(service.plugins[plugin_id]))
 if __name__ == '__main__': unittest.main()

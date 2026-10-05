@@ -19,7 +19,7 @@ from core.updream_bridge import generate_image  # noqa: E402
 class UpdreamBridgeTests(unittest.TestCase):
     def test_public_manifest_keeps_credentials_local(self) -> None:
         manifest = json.loads((ROOT / "apps/plugin-station/plugins/updream-bridge/plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["moduleVersion"], "1.1.0")
+        self.assertEqual(manifest["moduleVersion"], "1.1.1")
         self.assertTrue(manifest["updateInstallSource"])
         self.assertTrue(manifest["agentAccess"]["enabled"])
         self.assertEqual(manifest["handler"], "updream_bridge")

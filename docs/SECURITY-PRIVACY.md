@@ -17,7 +17,7 @@ CodexPlugins 是公开可审计的开源项目。Public 意味着任何人都可
 - GitHub 密码、验证码、Personal Access Token、OAuth 凭据或 SSH 私钥。
 - 账号资料、对话正文、日志、诊断数据库或 Codex 的 `.codex` 目录。
 - 代理订阅、节点、控制密钥、端口配置或私人白名单。
-- 私人插件及整个 `%LOCALAPPDATA%\CompanyAIHelpers`。
+- 私人插件及整个 `%CODEXTOOLS_DATA_ROOT%`。
 - 公司内网 IP、共享名、映射盘凭据、Y 盘路径或内部 Hub 交接历史。
 - 原始第三方二进制归档、来历不明的 DLL 或个人下载包。
 - 不适合跨电脑传播的本机缓存、虚拟环境、构建产物和备份。
@@ -28,11 +28,11 @@ CodexPlugins 是公开可审计的开源项目。Public 意味着任何人都可
 
 | 内容 | 默认位置 | 用途 |
 | --- | --- | --- |
-| 私人插件 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexTools\PrivatePlugins` | 单台电脑专用功能 |
-| 直连自定义项 | `%LOCALAPPDATA%\CompanyAIHelpers\ProxyOverrideBypass` | 用户自定义域名与备份 |
-| Codex 代理备份 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexSystemProxy` | 修改前的本机备份 |
-| 任务完成提示音 | `%LOCALAPPDATA%\CompanyAIHelpers\CodexAnswerChime` | Codex 与 WorkBuddy 共用的自定义音频、设置及 WorkBuddy 配置备份 |
-| 环境检查器 | `%LOCALAPPDATA%\CompanyAIHelpers\EnvironmentDetector` | UTF-8 代码页快照与本地恢复资料 |
+| 私人插件 | `%CODEXTOOLS_DATA_ROOT%\CodexTools\PrivatePlugins` | 单台电脑专用功能 |
+| 直连自定义项 | `%CODEXTOOLS_DATA_ROOT%\ProxyOverrideBypass` | 用户自定义域名与备份 |
+| Codex 代理备份 | `%CODEXTOOLS_DATA_ROOT%\CodexSystemProxy` | 修改前的本机备份 |
+| 任务完成提示音 | `%CODEXTOOLS_DATA_ROOT%\CodexAnswerChime` | Codex 与 WorkBuddy 共用的自定义音频、设置及 WorkBuddy 配置备份 |
+| 环境检查器 | `%CODEXTOOLS_DATA_ROOT%\EnvironmentDetector` | UTF-8 代码页快照与本地恢复资料 |
 | Python 环境 | 仓库内 `.runtime` | 本地依赖环境 |
 | 助手构建产物 | 仓库内 `artifacts` | 当前电脑编译出的程序 |
 

@@ -1,6 +1,6 @@
 # 开发环境检查与补全助手
 
-该助手由两个公共模块共同使用，底层只安装一个 `%LOCALAPPDATA%\CompanyAIHelpers\EnvironmentDetector\EnvironmentDetector.exe`：
+该助手由两个公共模块共同使用，底层只安装一个 `%CODEXTOOLS_DATA_ROOT%\EnvironmentDetector\EnvironmentDetector.exe`：
 
 - `--mode software`：软件安装检查，只读检查开发工具、Python 3.11+ 真实能力和编辑器集成。
 - `--mode codex`：Codex 环境补全，检查并按用户确认补全 PowerShell 7、Windows Terminal、Git、FFmpeg/FFprobe、PyYAML、yt-dlp 与 UTF-8 系统代码页。

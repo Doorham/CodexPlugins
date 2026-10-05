@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$recordDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CompanyAIHelpers\ProxyOverrideBypass'
+$recordDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.runtime\CompanyAIHelpers\ProxyOverrideBypass'
 $recordPath = Join-Path $recordDir 'install-record.json'
 if (-not (Test-Path -LiteralPath $recordPath)) { throw "Install record not found: $recordPath" }
 $record = Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8 | ConvertFrom-Json

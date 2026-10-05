@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from .tool_paths import TOOL_DATA_ROOT
 from typing import Any
 
 
@@ -50,7 +51,7 @@ def generate_image(repo_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
         path = Path(ref)
         if not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
             raise ValueError(f"参考图不存在或格式不支持：{ref}")
-    out = payload.get("out", str(Path.home() / "Pictures" / "UpdreamBridge"))
+    out = payload.get("out", str(TOOL_DATA_ROOT / "UpdreamBridge" / "Outputs"))
     if not isinstance(out, str) or not Path(out).is_absolute():
         raise ValueError("out 必须是绝对路径")
     prefix = payload.get("prefix", "updream")

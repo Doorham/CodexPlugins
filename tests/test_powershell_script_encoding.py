@@ -13,7 +13,7 @@ class PowerShellScriptEncodingTests(unittest.TestCase):
         scripts = sorted(
             path
             for path in ROOT.rglob("*.ps1")
-            if ".git" not in path.parts and ".runtime" not in path.parts
+            if ".git" not in path.relative_to(ROOT).parts and ".runtime" not in path.relative_to(ROOT).parts
         )
         self.assertGreater(len(scripts), 0)
         for script in scripts:

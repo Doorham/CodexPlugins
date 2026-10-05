@@ -14,7 +14,7 @@ if (-not $normalizedId.StartsWith('private-')) { $normalizedId = "private-$norma
 if ($normalizedId -notmatch '^private-[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'PluginId must use lowercase letters, digits and hyphens.' }
 if ([string]::IsNullOrWhiteSpace($Name) -or [string]::IsNullOrWhiteSpace($Developer)) { throw 'Name and Developer are required.' }
 
-$privateRoot = Join-Path $env:LOCALAPPDATA 'CompanyAIHelpers\CodexTools\PrivatePlugins'
+$privateRoot = Join-Path (Split-Path -Parent $PSScriptRoot) '.runtime\CompanyAIHelpers\CodexTools\PrivatePlugins'
 $pluginRoot = Join-Path $privateRoot $normalizedId
 $manifestPath = Join-Path $pluginRoot 'plugin.json'
 if (Test-Path -LiteralPath $pluginRoot) { throw "Private plugin already exists: $pluginRoot" }
@@ -35,7 +35,7 @@ $manifest = [ordered]@{
     accent = '#8b5cf6'
     mode = 'background'
     handler = 'process_app'
-    executable = "%LOCALAPPDATA%\CompanyAIHelpers\$toolName\$executableName"
+    executable = "%CODEXTOOLS_DATA_ROOT%\$toolName\$executableName"
     processName = $executableName
     startup = [ordered]@{ type = 'run'; name = $Name.Trim() }
     actions = @('toggle_enabled')

@@ -1,10 +1,11 @@
 {
   "id": "company-network-drive-access",
   "name": "公司网络盘访问",
-  "moduleVersion": "1.1.1",
+  "moduleVersion": "1.1.2",
   "developers": [
     "Althy",
-    "Doorham"
+    "Doorham",
+    "DRHW"
   ],
   "description": "让 Codex 保持内置完全访问权限并读写公司 W、X、Y、Z 网络盘，同时修复普通/管理员会话之间映射盘不可见的问题。不会新增权限策略选项或保存共享密码。",
   "category": "万灵传媒",
@@ -12,12 +13,12 @@
   "accent": "#38bdf8",
   "mode": "system",
   "handler": "network_drive_access",
-  "recordFolder": "%LOCALAPPDATA%\\CompanyAIHelpers\\CodexNetworkDriveAccess",
+  "recordFolder": "%CODEXTOOLS_DATA_ROOT%\\CodexNetworkDriveAccess",
   "localDataPolicy": {
     "scope": "local-private",
     "paths": [
       "%USERPROFILE%\\.codex\\config.toml",
-      "%LOCALAPPDATA%\\CompanyAIHelpers\\CodexNetworkDriveAccess"
+      "%CODEXTOOLS_DATA_ROOT%\\CodexNetworkDriveAccess"
     ],
     "sync": false,
     "upload": false,

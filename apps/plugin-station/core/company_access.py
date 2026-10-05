@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import uuid
 from pathlib import Path
+from .tool_paths import TOOL_DATA_ROOT
 
 COMPANY_ID = "wanling-media"
 MODULE_IDS = ["company-nas-remote-connect", "company-network-drive-access"]
@@ -83,7 +84,7 @@ def connector_source_hash():
 
 class CompanyAccess:
     def __init__(self, root=None):
-        self.root = Path(root) if root else Path(os.environ["LOCALAPPDATA"]) / "CompanyAIHelpers" / "CodexTools" / "CompanyAccess"
+        self.root = Path(root) if root else TOOL_DATA_ROOT / "CodexTools" / "CompanyAccess"
         self.record_file = self.root / "activation.dpapi"
 
     def record(self):

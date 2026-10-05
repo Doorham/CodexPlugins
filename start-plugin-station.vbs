@@ -3,6 +3,7 @@ Dim shell, fso, root, pythonw, app, updater, updateCommand
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 root = fso.GetParentFolderName(WScript.ScriptFullName)
+shell.Environment("PROCESS")("CODEXTOOLS_DATA_ROOT") = fso.BuildPath(root, ".runtime\CompanyAIHelpers")
 pythonw = fso.BuildPath(root, ".runtime\venv\Scripts\pythonw.exe")
 app = fso.BuildPath(root, "apps\plugin-station\app.py")
 updater = fso.BuildPath(root, "scripts\update-from-origin.ps1")

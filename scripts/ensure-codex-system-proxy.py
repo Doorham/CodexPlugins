@@ -11,11 +11,11 @@ APP_ROOT = REPO_ROOT / "apps" / "plugin-station"
 sys.path.insert(0, str(APP_ROOT))
 
 from core.codex_system_proxy import config_status, ensure_system_proxy_feature  # noqa: E402
+from core.tool_paths import TOOL_DATA_ROOT
 
 
 def main() -> int:
-    local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    backup_root = local_app_data / "CompanyAIHelpers" / "CodexSystemProxy" / "Backups"
+    backup_root = TOOL_DATA_ROOT / "CodexSystemProxy" / "Backups"
     try:
         result = ensure_system_proxy_feature(backup_root=backup_root)
         status = config_status()

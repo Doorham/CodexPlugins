@@ -1,15 +1,20 @@
 {
   "id": "updream-clipboard-cleaner",
   "name": "Updream 剪贴板清理",
-  "moduleVersion": "1.0.4",
-  "developers": ["Doorham", "XY", "Althy"],
+  "moduleVersion": "1.0.5",
+  "developers": [
+    "Doorham",
+    "XY",
+    "Althy",
+    "DRHW"
+  ],
   "description": "开启会立即运行并加入开机自启动；停用会停止程序并取消自启动。复制画布时转换为 Photoshop 可安全读取的标准图片格式。",
   "category": "剪贴板",
   "icon": "▣",
   "accent": "#22c55e",
   "mode": "background",
   "handler": "process_app",
-  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamClipboardCleaner\\UpdreamClipboardCleaner.exe",
+  "executable": "%CODEXTOOLS_DATA_ROOT%\\UpdreamClipboardCleaner\\UpdreamClipboardCleaner.exe",
   "installSource": "artifacts/helpers/UpdreamClipboardCleaner.exe",
   "processName": "UpdreamClipboardCleaner.exe",
   "startup": {
@@ -17,9 +22,21 @@
     "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Updream Clipboard Cleaner.lnk"
   },
   "keepAlive": true,
-  "actions": ["toggle_enabled", "toggle_startup"],
-  "uiActions": [
-    {"id": "toggle_enabled", "label": "切换状态", "kind": "toggle"}
+  "actions": [
+    "toggle_enabled",
+    "toggle_startup"
   ],
-  "agentAccess": {"enabled": true, "actions": ["toggle_enabled"]}
+  "uiActions": [
+    {
+      "id": "toggle_enabled",
+      "label": "切换状态",
+      "kind": "toggle"
+    }
+  ],
+  "agentAccess": {
+    "enabled": true,
+    "actions": [
+      "toggle_enabled"
+    ]
+  }
 }

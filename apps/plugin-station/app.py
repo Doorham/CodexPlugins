@@ -6,13 +6,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from core.tool_paths import TOOL_DATA_ROOT, legacy_runtime_roots
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.19.4"
+APP_VERSION = "0.20.0"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
-INSTANCE_VERSION_MARKER = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "CompanyAIHelpers" / "CodexTools" / "plugin-station-version.txt"
+INSTANCE_VERSION_MARKER = TOOL_DATA_ROOT / "CodexTools" / "plugin-station-version.txt"
 ERROR_ALREADY_EXISTS = 183
 SW_RESTORE = 9
 WM_CLOSE = 0x0010
@@ -146,6 +147,16 @@ def synchronize_proxy_bypass() -> None:
 def main() -> int:
     global APP_WINDOW
 
+    if legacy_runtime_roots():
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            "发现旧工具箱数据目录。为保留私人配置，请先按 README 的“旧版升级”步骤迁移；"
+            "完成后重新打开工具箱。本次未读取或修改旧配置。\n\n"
+            + str(ROOT.parents[1] / "scripts/migrate-workspace-runtime.ps1"),
+            APP_TITLE, 0x30,
+        )
+        return 1
+
     mutex = acquire_single_instance()
     if mutex is None:
         return 0
@@ -242,7 +253,8 @@ def main() -> int:
         background_color="#0b0d12",
     )
     try:
-        webview.start(gui="edgechromium", debug=False, private_mode=False)
+        webview.start(gui="edgechromium", debug=False, private_mode=False,
+                      storage_path=str(TOOL_DATA_ROOT / "CodexTools" / "webview2-data"))
     finally:
         close_handle(mutex)
     return 0

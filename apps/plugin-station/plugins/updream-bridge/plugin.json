@@ -1,27 +1,58 @@
 {
   "id": "updream-bridge",
   "name": "UpdreamBridge 图片生成",
-  "moduleVersion": "1.1.0",
-  "developers": ["Doorham", "Althy"],
+  "moduleVersion": "1.1.1",
+  "developers": [
+    "Doorham",
+    "Althy",
+    "DRHW"
+  ],
   "description": "配置本机 UpDream 登录，供 Codex 调用文字生图、参考图生图和悠船 Midjourney；不包含视频或画布编辑。",
   "category": "图像工具",
   "icon": "▧",
   "accent": "#4653dd",
   "mode": "on_demand",
   "handler": "updream_bridge",
-  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\UpdreamBridgeConfig.exe",
+  "executable": "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\UpdreamBridgeConfig.exe",
   "installSource": "artifacts/helpers/UpdreamBridgeConfig.exe",
   "updateInstallSource": true,
   "processName": "UpdreamBridgeConfig.exe",
   "supportFiles": [
-    {"source": "helpers/updream-bridge/assets/index.html", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\index.html"},
-    {"source": "helpers/updream-bridge/assets/guide-window.html", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\guide-window.html"},
-    {"source": "helpers/updream-bridge/assets/setup-guide.png", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\setup-guide.png"},
-    {"source": "helpers/updream-bridge/updream_gen.py", "target": "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\updream_gen.py"}
+    {
+      "source": "helpers/updream-bridge/assets/index.html",
+      "target": "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\index.html"
+    },
+    {
+      "source": "helpers/updream-bridge/assets/guide-window.html",
+      "target": "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\guide-window.html"
+    },
+    {
+      "source": "helpers/updream-bridge/assets/setup-guide.png",
+      "target": "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\setup-guide.png"
+    },
+    {
+      "source": "helpers/updream-bridge/updream_gen.py",
+      "target": "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\updream_gen.py"
+    }
   ],
-  "actions": ["start", "generate_image"],
-  "uiActions": [{"id": "start", "label": "打开配置", "kind": "primary"}],
-  "agentAccess": {"enabled": true, "actions": ["start", "generate_image"]},
+  "actions": [
+    "start",
+    "generate_image"
+  ],
+  "uiActions": [
+    {
+      "id": "start",
+      "label": "打开配置",
+      "kind": "primary"
+    }
+  ],
+  "agentAccess": {
+    "enabled": true,
+    "actions": [
+      "start",
+      "generate_image"
+    ]
+  },
   "agentActionInfo": {
     "start": "打开本机 UpdreamBridge 登录配置窗口。",
     "generate_image": {
@@ -42,7 +73,10 @@
   },
   "localDataPolicy": {
     "scope": "local-private",
-    "paths": ["%USERPROFILE%\\.updream\\credentials.json", "%LOCALAPPDATA%\\CompanyAIHelpers\\UpdreamBridge\\webview2-data"],
+    "paths": [
+      "%USERPROFILE%\\.updream\\credentials.json",
+      "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\webview2-data"
+    ],
     "sync": false,
     "upload": false,
     "preserveOnUpdate": true,

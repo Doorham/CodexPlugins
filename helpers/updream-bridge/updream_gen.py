@@ -5,7 +5,7 @@ UpDream 生图桥 CLI —— 让任意本地 Agent（Codex / WorkBuddy / 其他�
 
 凭证读取顺序（严守「只认本机本地」，绝不读包目录/公共区，防 token 泄露）：
   1. 环境变量 UPDREAM_TOKEN / UPDREAM_PROJECT_ID
-  2. ~/.updream/credentials.json（由 Codex 工具箱的账号配置窗口保存）
+  2. 工具箱独立运行目录中的 UpdreamBridge/credentials.json（不进入源码或公区）
 
 首次使用请在 Codex 工具箱打开 UpdreamBridge 账号配置。
 """
@@ -13,7 +13,11 @@ import argparse, base64, json, os, ssl, sys, time, uuid, urllib.request, urllib.
 from pathlib import Path
 
 BASE = "https://www.updream.cn/api"
-CRED_PATH = Path.home() / ".updream" / "credentials.json"
+_script_root = Path(__file__).resolve().parent
+_data_root = Path(os.environ["CODEXTOOLS_DATA_ROOT"]) if os.environ.get("CODEXTOOLS_DATA_ROOT") else (
+    _script_root.parent if _script_root.parent.name == "CompanyAIHelpers"
+    else _script_root.parents[1] / ".runtime" / "CompanyAIHelpers")
+CRED_PATH = _data_root / "UpdreamBridge" / "credentials.json"
 _ctx = ssl.create_default_context()
 
 # 标准尺寸表（服务端按 image_resolution+ratio 定尺寸，这里 width/height 作兜底）

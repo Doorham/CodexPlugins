@@ -90,13 +90,17 @@ function Install-BuiltHelper {
     param([string]$FileName, [string]$TargetFolder, [string]$ProcessName, [string]$Commit)
     $source = Join-Path $repoRoot "artifacts\helpers\$FileName"
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { return $false }
-    $folder = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "CompanyAIHelpers\$TargetFolder"
+    $folder = Join-Path $repoRoot ".runtime\CompanyAIHelpers\$TargetFolder"
     $target = Join-Path $folder $FileName
     $same = (Test-Path -LiteralPath $target -PathType Leaf) -and
         ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash)
     if ($same) { return $false }
     $running = @()
-    if ($ProcessName) { $running = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue) }
+    if ($ProcessName) {
+        $running = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and [string]::Equals($_.Path, $target, [StringComparison]::OrdinalIgnoreCase)
+        })
+    }
     foreach ($process in $running) { Stop-Process -Id $process.Id -Force }
     if ($running.Count) { Start-Sleep -Milliseconds 300 }
     New-Item -ItemType Directory -Path $folder -Force | Out-Null

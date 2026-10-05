@@ -1,10 +1,11 @@
 {
   "id": "company-nas-remote-connect",
   "name": "公司 NAS 远程连接",
-  "moduleVersion": "1.2.1",
+  "moduleVersion": "1.2.11",
   "developers": [
     "Althy",
-    "Doorham"
+    "Doorham",
+    "DRHW"
   ],
   "companyId": "wanling-media",
   "description": "逐盘显示实际连接通道；连接前必须明确选择局域网或 Tailscale，切换已有映射需确认，创建映射前需确认 NAS 凭据。",
@@ -13,7 +14,7 @@
   "accent": "#38bdf8",
   "mode": "on_demand",
   "handler": "process_app",
-  "executable": "%LOCALAPPDATA%\\CompanyAIHelpers\\CodexTools\\CompanyAccess\\NasRemoteConnect.exe",
+  "executable": "%CODEXTOOLS_DATA_ROOT%\\CodexTools\\CompanyAccess\\NasRemoteConnect.exe",
   "processName": "NasRemoteConnect.exe",
   "actions": [
     "start"

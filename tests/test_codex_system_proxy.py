@@ -35,10 +35,10 @@ class CodexSystemProxyTests(unittest.TestCase):
     def test_online_manifest_and_release_agree(self) -> None:
         release = json.loads(RELEASE_PATH.read_text(encoding="utf-8"))
         module = next(item for item in release["modules"] if item["id"] == self.plugin["id"])
-        self.assertEqual(release["version"], "0.19.4")
-        self.assertEqual(self.plugin["moduleVersion"], "1.1.0")
+        self.assertEqual(release["version"], "0.20.0")
+        self.assertEqual(self.plugin["moduleVersion"], "1.1.1")
         self.assertEqual(self.plugin["name"], "Codex 对话 timeout 修复")
-        self.assertEqual(self.plugin["developers"], ["Althy"])
+        self.assertEqual(self.plugin["developers"], ["Althy", "DRHW"])
         self.assertEqual(module["version"], self.plugin["moduleVersion"])
         self.assertEqual(module["developers"], self.plugin["developers"])
         self.assertEqual(release["update"]["host"], "github.com")
@@ -182,7 +182,7 @@ class CodexSystemProxyTests(unittest.TestCase):
             local = root / "OpenAI" / "Codex" / "bin" / "current" / "codex.exe"
             local.parent.mkdir(parents=True)
             local.write_bytes(b"test")
-            with mock.patch.dict("os.environ", {"LOCALAPPDATA": str(root)}, clear=False), mock.patch(
+            with mock.patch.dict("os.environ", {"LOCALAPPDATA": str(root), "CODEX_CLI_PATH": ""}, clear=False), mock.patch(
                 "core.codex_system_proxy.shutil.which", return_value=r"C:\Program Files\WindowsApps\OpenAI.Codex\codex.exe"
             ):
                 self.assertEqual(find_codex_cli(), local)

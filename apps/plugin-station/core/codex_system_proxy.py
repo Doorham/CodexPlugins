@@ -9,6 +9,7 @@ import time
 import tomllib
 import winreg
 from pathlib import Path
+from .tool_paths import TOOL_DATA_ROOT
 from typing import Any, Callable
 
 
@@ -144,7 +145,7 @@ def ensure_system_proxy_feature(
 
     backup = None
     if path.exists():
-        destination = backup_root or Path(os.environ.get("LOCALAPPDATA", path.parent)) / "CompanyAIHelpers" / "CodexSystemProxy" / "Backups"
+        destination = backup_root or TOOL_DATA_ROOT / "CodexSystemProxy" / "Backups"
         destination.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backup = destination / f"config-before-system-proxy-{stamp}.toml"

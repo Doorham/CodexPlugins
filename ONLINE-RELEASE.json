@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.19.4",
+  "version": "0.20.0",
   "license": "Apache-2.0",
   "developers": [
     "Doorham",
     "XY",
-    "Althy"
+    "Althy",
+    "DRHW"
   ],
   "update": {
     "remote": "origin",
@@ -18,86 +19,97 @@
   "modules": [
     {
       "id": "updream-bridge",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "developers": [
         "Doorham",
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "codex-system-proxy",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "developers": [
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "cn-proxy-bypass",
-      "version": "1.2.6",
+      "version": "1.2.7",
       "developers": [
         "Doorham",
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "updream-clipboard-cleaner",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "developers": [
         "Doorham",
         "XY",
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "codex-answer-chime",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "developers": [
         "Doorham",
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "arctis-nova-5-battery",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "developers": [
-        "Doorham"
+        "Doorham",
+        "DRHW"
       ]
     },
     {
       "id": "software-environment-checker",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "developers": [
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "codex-environment-helper",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "developers": [
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     },
     {
       "id": "company-nas-remote-connect",
-      "version": "1.2.1",
+      "version": "1.2.11",
       "developers": [
         "Althy",
-        "Doorham"
+        "Doorham",
+        "DRHW"
       ]
     },
     {
       "id": "company-network-drive-access",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "developers": [
         "Althy",
-        "Doorham"
+        "Doorham",
+        "DRHW"
       ]
     },
     {
       "id": "wetype-awesun-bridge",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "developers": [
-        "Althy"
+        "Althy",
+        "DRHW"
       ]
     }
   ],

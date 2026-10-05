@@ -11,6 +11,7 @@ import uuid
 import winreg
 from ctypes import wintypes
 from pathlib import Path
+from .tool_paths import TOOL_DATA_ROOT
 from typing import Any
 
 
@@ -298,7 +299,7 @@ def ensure_full_access_default(
 
     backup = None
     if path.exists():
-        destination_root = backup_root or Path(os.environ.get("LOCALAPPDATA", path.parent)) / "CompanyAIHelpers" / "CodexNetworkDriveAccess" / "Backups"
+        destination_root = backup_root or TOOL_DATA_ROOT / "CodexNetworkDriveAccess" / "Backups"
         destination_root.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backup = destination_root / f"config-pre-full-access-{stamp}.toml"

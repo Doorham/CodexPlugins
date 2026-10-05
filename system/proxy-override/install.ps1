@@ -34,7 +34,7 @@ foreach ($item in $requested) {
 }
 $newValue = $merged -join ';'
 
-$recordDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CompanyAIHelpers\ProxyOverrideBypass'
+$recordDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.runtime\CompanyAIHelpers\ProxyOverrideBypass'
 New-Item -ItemType Directory -Path $recordDir -Force | Out-Null
 $recordPath = Join-Path $recordDir 'install-record.json'
 $backupPath = Join-Path $recordDir 'ProxyOverride.before.txt'

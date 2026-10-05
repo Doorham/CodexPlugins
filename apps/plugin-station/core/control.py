@@ -36,6 +36,7 @@ from .workbuddy_chime import (
 from .wininet_proxy import apply_proxy_bypass
 from .updream_bridge import generate_image as generate_updream_image
 from .source_build import build_voice_bridge
+from .tool_paths import expand_tool_path
 from .company_access import CompanyAccess, COMPANY_ID
 from .company_drives import (config_status as network_config_status, enable_linked_connections, ensure_full_access_default, ensure_mappings, expected_drives, linked_connections_enabled, probe_drives, write_test as network_write_test)
 
@@ -48,7 +49,7 @@ KEEP_ALIVE_START_GRACE_SECONDS = 0.8
 
 
 def expand_path(value: str) -> Path:
-    return Path(os.path.expandvars(value)).expanduser()
+    return expand_tool_path(value)
 
 
 def hidden_run(args: list[str], timeout: int = 15) -> subprocess.CompletedProcess[str]:
@@ -133,7 +134,7 @@ class ControlService:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.repo_root = root.parents[1]
-        self.private_root = expand_path(r"%LOCALAPPDATA%\CompanyAIHelpers\CodexTools\PrivatePlugins")
+        self.private_root = expand_path(r"%CODEXTOOLS_DATA_ROOT%\CodexTools\PrivatePlugins")
         self.private_errors: list[str] = []
         self._lock = threading.RLock()
         self.company_access = CompanyAccess()
@@ -214,7 +215,7 @@ class ControlService:
             if data.get("supportFiles") or data.get("installSource"):
                 raise ValueError(f"Private plugins cannot install repository bundles or support files in {manifest_path}")
             executable = expand_path(str(data.get("executable", ""))).resolve()
-            helpers_root = expand_path(r"%LOCALAPPDATA%\CompanyAIHelpers").resolve()
+            helpers_root = expand_path(r"%CODEXTOOLS_DATA_ROOT%").resolve()
             if os.path.commonpath([str(executable), str(helpers_root)]) != str(helpers_root):
                 raise ValueError(f"Private plugin executable must stay under {helpers_root}")
             if executable.name.lower() != str(data.get("processName", "")).lower():
@@ -269,7 +270,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex工具箱网络版",
-                "version": "0.18.1",
+                "version": "0.20.0",
                 "developers": ["Doorham", "XY", "Althy"],
                 "pluginCount": len(cards),
             },

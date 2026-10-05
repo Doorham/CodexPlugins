@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$installDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CompanyAIHelpers\CodexAnswerChime'
+$installDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.runtime\CompanyAIHelpers\CodexAnswerChime'
 $startupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Codex Answer Chime.lnk'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 Get-Process -Name 'CodexAnswerChime' -ErrorAction SilentlyContinue | Stop-Process -Force

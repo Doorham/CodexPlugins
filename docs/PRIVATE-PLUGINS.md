@@ -6,7 +6,7 @@
 
 固定目录：
 
-`%LOCALAPPDATA%\CompanyAIHelpers\CodexTools\PrivatePlugins`
+`%CODEXTOOLS_DATA_ROOT%\CodexTools\PrivatePlugins`
 
 该目录位于 Git 仓库之外，因此默认：
 
@@ -24,7 +24,7 @@
 1. 在私人目录下建立以插件 ID 命名的子目录。
 2. 参考 `templates\private-plugin\plugin.json.example` 创建 `plugin.json`。
 3. 私人 ID 必须以 `private-` 开头。
-4. 当前私人层只接受 `process_app` handler；可执行文件必须位于 `%LOCALAPPDATA%\CompanyAIHelpers` 下，且 `processName` 必须与文件名一致。
+4. 当前私人层只接受 `process_app` handler；可执行文件必须位于 `%CODEXTOOLS_DATA_ROOT%` 下，且 `processName` 必须与文件名一致。
 5. 重新启动插件站后在“私人页面”查看。
 
 ## 进入网络版
