@@ -15,6 +15,16 @@ if (-not $BackupName) { $BackupName = 'runtime-move-' + (Get-Date -Format 'yyyyM
 if ($BackupName -notmatch '^runtime-move-[0-9-]+$') { throw 'Invalid backup name.' }
 $backupRoot = Join-Path $runtimeRoot ('migration-backups\' + $BackupName)
 if (-not ([IO.Path]::GetFullPath($backupRoot).StartsWith($runtimeRoot + '\', [StringComparison]::OrdinalIgnoreCase))) { throw 'Backup is outside runtime.' }
+foreach ($path in @((Join-Path $runtimeRoot 'migration-backups'),$backupRoot)) {
+    if ((Test-Path -LiteralPath $path) -and
+        ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Backup destination is a reparse point; nothing was migrated.'
+    }
+}
+if ((Test-Path -LiteralPath $backupRoot) -and
+    @(Get-ChildItem -LiteralPath $backupRoot -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
+    throw 'Reparse point in owned backup; migration stopped.'
+}
 New-Item -ItemType Directory -Path $destination,$backupRoot -Force | Out-Null
 trap {
     [pscustomobject]@{phase=$Phase;error=$_.Exception.Message} | ConvertTo-Json -Compress |
@@ -37,6 +47,14 @@ function Assert-OwnedSource($source) {
     if (-not $absolute.StartsWith($local + '\',[StringComparison]::OrdinalIgnoreCase) -or
         [IO.Path]::GetFileName($absolute) -ne 'CompanyAIHelpers') { throw 'Invalid migration source.' }
     if (-not (Test-Path -LiteralPath $absolute)) { return }
+    $ancestor = $absolute
+    while ($ancestor -ne $local) {
+        if ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'Reparse point in migration source ancestry.'
+        }
+        $ancestor = Split-Path -Parent $ancestor
+        if (-not $ancestor) { throw 'Migration source escaped its local root.' }
+    }
     if ((Get-Item -LiteralPath $absolute -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
         throw 'Migration source is a reparse point.'
     }
@@ -47,7 +65,36 @@ function Assert-OwnedSource($source) {
     }
 }
 foreach ($source in $sources) { Assert-OwnedSource $source }
+function Get-DataHash([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-','') }
+    finally { $stream.Dispose(); $algorithm.Dispose() }
+}
+function Is-GeneratedFile([string]$Relative) {
+    [IO.Path]::GetExtension($Relative) -in @('.exe','.dll','.pdb') -or
+    [IO.Path]::GetFileName($Relative) -in @('instance-version.txt','status.json','saved-restore-status.json','install-record.json')
+}
 if ($Phase -eq 'Stage') {
+    # Two installations may contain different private profiles. Never silently
+    # choose one, or overwrite a profile already present in the new workspace.
+    $seenData = @{}
+    foreach ($source in $sources) {
+        if (-not (Test-Path -LiteralPath $source.Path)) { continue }
+        foreach ($file in (Get-ChildItem -LiteralPath $source.Path -File -Recurse -Force)) {
+            $relative = $file.FullName.Substring($source.Path.Length + 1)
+            if (Is-GeneratedFile $relative) { continue }
+            $hash = Get-DataHash $file.FullName
+            if ($seenData.ContainsKey($relative) -and $seenData[$relative] -ne $hash) {
+                throw 'Conflicting legacy private data; preserve both originals and contact maintenance.'
+            }
+            $seenData[$relative] = $hash
+            $target = Join-Path $destination $relative
+            if ((Test-Path -LiteralPath $target) -and (Get-DataHash $target) -ne $hash) {
+                throw 'Workspace private data conflicts with legacy data; no profile was overwritten.'
+            }
+        }
+    }
     foreach ($source in $sources) {
         if (-not (Test-Path -LiteralPath $source.Path)) { continue }
         $snapshot = Join-Path $backupRoot ('snapshots\' + $source.Id)
@@ -108,6 +155,26 @@ foreach ($process in (Get-CimInstance Win32_Process)) {
             }
             break
         }
+    }
+}
+# Helpers have now stopped. Refresh files changed after staging only when the
+# destination still equals our staged copy; never overwrite a newer profile.
+foreach ($source in $sources) {
+    if (-not (Test-Path -LiteralPath $source.Path)) { continue }
+    foreach ($file in (Get-ChildItem -LiteralPath $source.Path -File -Recurse -Force)) {
+        $relative = $file.FullName.Substring($source.Path.Length + 1)
+        $target = Join-Path $destination $relative
+        $snapshot = Join-Path $backupRoot ('snapshots\' + $source.Id + '\' + $relative)
+        $sourceHash = Get-DataHash $file.FullName
+        if ((Test-Path -LiteralPath $target) -and (Get-DataHash $target) -eq $sourceHash) { continue }
+        if ((Test-Path -LiteralPath $target) -and (Is-GeneratedFile $relative)) { continue }
+        if ((Test-Path -LiteralPath $target) -and
+            (-not (Test-Path -LiteralPath $snapshot) -or (Get-DataHash $target) -ne (Get-DataHash $snapshot))) {
+            throw 'Private data changed during migration; originals and backups were retained.'
+        }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+        Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+        if ((Get-DataHash $target) -ne $sourceHash) { throw 'Copied private file failed verification.' }
     }
 }
 $runPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'

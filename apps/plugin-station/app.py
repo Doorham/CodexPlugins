@@ -10,7 +10,7 @@ from core.tool_paths import TOOL_DATA_ROOT, legacy_runtime_roots
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.20.0"
+APP_VERSION = "0.20.1"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
 INSTANCE_VERSION_MARKER = TOOL_DATA_ROOT / "CodexTools" / "plugin-station-version.txt"
@@ -148,14 +148,13 @@ def main() -> int:
     global APP_WINDOW
 
     if legacy_runtime_roots():
-        ctypes.windll.user32.MessageBoxW(
-            None,
-            "发现旧工具箱数据目录。为保留私人配置，请先按 README 的“旧版升级”步骤迁移；"
-            "完成后重新打开工具箱。本次未读取或修改旧配置。\n\n"
-            + str(ROOT.parents[1] / "scripts/migrate-workspace-runtime.ps1"),
-            APP_TITLE, 0x30,
-        )
-        return 1
+        from core.runtime_upgrade import UpgradeError, request_runtime_upgrade
+        try:
+            request_runtime_upgrade(ROOT.parents[1])
+            return 0
+        except (UpgradeError, OSError) as exc:
+            ctypes.windll.user32.MessageBoxW(None, str(exc), APP_TITLE, 0x30)
+            return 1
 
     mutex = acquire_single_instance()
     if mutex is None:
