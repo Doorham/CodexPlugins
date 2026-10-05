@@ -43,6 +43,10 @@ internal sealed class VoiceBridge : ApplicationContext {
     string output="",copiedOutput="";
     int copyAttempts;
     volatile bool focusTransferRunning;
+    uint identityPid;
+    string identityName="";
+    bool identityMatch;
+    DateTime nextIdentityCheck;
 
     [STAThread] static int Main(string[] args) {
         string stopName="Local\\WeTypeAweSunBridge_Stop_"+Environment.UserName;
@@ -91,7 +95,50 @@ internal sealed class VoiceBridge : ApplicationContext {
         try { using(var process=Process.GetProcessById((int)pid))return process.ProcessName; }
         catch{return "";}
     }
-    static bool AweSun(IntPtr hwnd){return ProcessName(hwnd).Equals("AweSun",StringComparison.OrdinalIgnoreCase);}
+    static bool ClientName(string value) {
+        string name=value??"";
+        int slash=Math.Max(name.LastIndexOf('/'),name.LastIndexOf('\\'));
+        if(slash>=0)name=name.Substring(slash+1);
+        if(name.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))name=name.Substring(0,name.Length-4);
+        return name.Equals("AweSun",StringComparison.OrdinalIgnoreCase)||
+            name.Equals("SunloginClient",StringComparison.OrdinalIgnoreCase);
+    }
+    static bool Contains(string value,string part) {
+        return (value??"").IndexOf(part,StringComparison.OrdinalIgnoreCase)>=0;
+    }
+    internal static bool IsRemoteClient(string processName,string originalFilename,
+        string productName,string description,string companyName) {
+        // A remote computer's title/name is never an application identity.
+        if(ClientName(processName))return true;
+        if(Contains(processName,"service")||Contains(processName,"guard")||Contains(processName,"update"))return false;
+        if(ClientName(originalFilename))return true;
+        bool brand=Contains(productName,"AweSun")||Contains(productName,"Sunlogin")||Contains(productName,"向日葵");
+        bool client=Contains(description,"remote control")||Contains(description,"remote desktop")||Contains(description,"远程控制");
+        bool vendor=Contains(companyName,"Oray")||Contains(companyName,"贝锐");
+        return brand&&client&&vendor;
+    }
+    bool RemoteClient(IntPtr hwnd,string processName) {
+        if(ClientName(processName))return true;
+        uint pid;GetWindowThreadProcessId(hwnd,out pid);
+        DateTime now=DateTime.UtcNow;
+        if(pid==identityPid&&processName==identityName&&now<nextIdentityCheck)return identityMatch;
+        identityPid=pid;identityName=processName;identityMatch=false;
+        nextIdentityCheck=now.AddSeconds(2);
+        // Cache metadata, including failures, rather than reading an EXE every 30ms.
+        // Periodic refresh also prevents a reused PID from retaining old identity.
+        try {
+            using(var process=Process.GetProcessById((int)pid)) {
+                var module=process.MainModule;
+                if(module==null)return false;
+                var info=FileVersionInfo.GetVersionInfo(module.FileName);
+                identityMatch=IsRemoteClient(processName,info.OriginalFilename,
+                    info.ProductName,info.FileDescription,info.CompanyName);
+            }
+        } catch(InvalidOperationException){}catch(System.ComponentModel.Win32Exception){}
+        catch(ArgumentException){}catch(IOException){}catch(UnauthorizedAccessException){}
+        catch(System.Security.SecurityException){}
+        return identityMatch;
+    }
     static bool WeType(IntPtr hwnd){return ProcessName(hwnd).StartsWith("wetype",StringComparison.OrdinalIgnoreCase);}
     static bool VoiceVisible() {
         bool found=false;
@@ -150,7 +197,7 @@ internal sealed class VoiceBridge : ApplicationContext {
         DateTime now=DateTime.UtcNow;
         IntPtr foreground=GetForegroundWindow();
         string process=ProcessName(foreground);
-        bool aweSun=process.Equals("AweSun",StringComparison.OrdinalIgnoreCase);
+        bool aweSun=RemoteClient(foreground,process);
         bool weType=process.StartsWith("wetype",StringComparison.OrdinalIgnoreCase);
         bool ownReceiver=foreground==receiver.Handle;
         bool changed=foreground!=lastForeground;

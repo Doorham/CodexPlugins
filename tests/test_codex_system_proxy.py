@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -35,7 +36,13 @@ class CodexSystemProxyTests(unittest.TestCase):
     def test_online_manifest_and_release_agree(self) -> None:
         release = json.loads(RELEASE_PATH.read_text(encoding="utf-8"))
         module = next(item for item in release["modules"] if item["id"] == self.plugin["id"])
-        self.assertEqual(release["version"], "0.20.3")
+        app_tree = ast.parse((APP_ROOT / "app.py").read_text(encoding="utf-8"))
+        app_version = next(
+            ast.literal_eval(node.value) for node in app_tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "APP_VERSION" for target in node.targets)
+        )
+        self.assertEqual(release["version"], app_version)
         self.assertEqual(self.plugin["moduleVersion"], "1.1.1")
         self.assertEqual(self.plugin["name"], "Codex 对话 timeout 修复")
         self.assertEqual(self.plugin["developers"], ["Althy", "DRHW"])
