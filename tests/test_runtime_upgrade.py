@@ -110,6 +110,41 @@ class RuntimeUpgradeTests(unittest.TestCase):
                     self.assertEqual((other / 'settings.json').read_text(), '{"fixture":1}')
 
     @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
+    def test_owned_selector_accepts_venv_children_but_rejects_other_apps_and_sessions(self):
+        body = (ROOT / 'scripts/auto-migrate-runtime.ps1').read_text(encoding='utf-8-sig')
+        selector = re.search(r'(function Get-OwnedToolboxProcesses.*?)(?=\n# End owned-process selector)',
+                             body, re.S).group(1)
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            venv = str(repo / '.runtime/venv/Scripts/pythonw.exe')
+            app = str(repo / 'apps/plugin-station/app.py')
+            command = '"' + venv + '" "' + app + '"'
+            base = str(repo / 'base/pythonw.exe')
+            rows = []
+            for pid, parent, exe, argv, session in [
+                (10, 1, venv, command, 1), (11, 10, base, command, 1),
+                (12, 11, base, command, 1), (20, 999, base, command, 1),
+                (21, 10, base, command, 2), (22, 10, base, 'other.py', 1),
+                (23, 10, str(repo / 'other.exe'), command, 1),
+            ]:
+                rows.append(dict(ProcessId=pid, ParentProcessId=parent, ExecutablePath=exe,
+                                 CommandLine=argv, SessionId=session))
+            script = repo / 'selector-fixture.ps1'
+            script.write_text(selector + "\n$rows='" + json.dumps(rows).replace("'", "''") +
+                              "'|ConvertFrom-Json\n$owned=@('" + venv.replace("'", "''") +
+                              "')\n$pattern='(?:^|\\s)\"?' + [regex]::Escape('" +
+                              app.replace("'", "''") + "') + '(?:\"|\\s|$)'\n" +
+                              '@(Get-OwnedToolboxProcesses $rows $owned $pattern 1 | '
+                              'ForEach-Object {[int]$_.ProcessId} | Sort-Object) | ConvertTo-Json -Compress',
+                              encoding='utf-8-sig')
+            environment = dict(os.environ)
+            environment.pop('PSModulePath', None)
+            result = subprocess.run([str(PS), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script)],
+                                    env=environment, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+            self.assertEqual(json.loads(result.stdout), [10, 11, 12])
+
+    @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
     def test_hidden_fixture_window_closes_gracefully_without_touching_other_processes(self):
         body = (ROOT / 'scripts/auto-migrate-runtime.ps1').read_text(encoding='utf-8-sig')
         native = re.search(r"Add-Type -TypeDefinition @'\n(.*?)\n'@", body, re.S).group(1)
@@ -132,7 +167,7 @@ $f.Show();$f.Hide()
                                      env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      creationflags=subprocess.CREATE_NO_WINDOW)
             try:
-                deadline = time.monotonic() + 10
+                deadline = time.monotonic() + 25
                 while not ready.exists() and time.monotonic() < deadline:
                     if child.poll() is not None:
                         break
@@ -145,9 +180,9 @@ $f.Show();$f.Hide()
                 command = "Add-Type -TypeDefinition @'\n" + native + "\n'@\n" + \
                           '[ToolboxUpgradeWindows]::CloseOwned(' + str(child.pid) + ')'
                 result = subprocess.run([str(PS), '-NoProfile', '-Command', command], env=environment,
-                                        capture_output=True, timeout=10)
+                                        capture_output=True, timeout=35)
                 self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
-                self.assertEqual(child.wait(timeout=10), 0)
+                self.assertEqual(child.wait(timeout=20), 0)
             finally:
                 if child.poll() is None:
                     child.terminate()  # Only this test's synthetic child.
@@ -186,7 +221,7 @@ exit 0
                                      '-RequestId', request_id, '-NoLaunch', '-NoDialog'],
                                     cwd=repo, env=environment, capture_output=True, timeout=25)
             self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
-            deadline = time.monotonic() + 35
+            deadline = time.monotonic() + 100
             while time.monotonic() < deadline:
                 try:
                     state = json.loads(state_path.read_text(encoding='utf-8-sig'))

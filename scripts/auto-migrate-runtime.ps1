@@ -48,6 +48,31 @@ function Show-Failure {
             'Codex工具箱升级', 'OK', 'Warning') | Out-Null
     }
 }
+function Get-OwnedToolboxProcesses($Processes, $OwnedPython, [string]$AppPattern, [int]$SessionId) {
+    $candidates = @($Processes | Where-Object {
+        $_.SessionId -eq $SessionId -and $_.CommandLine -match $AppPattern
+    })
+    $selected = @{}
+    foreach ($process in $candidates) {
+        if ($process.ExecutablePath -in $OwnedPython) { $selected[[int]$process.ProcessId] = $process }
+    }
+    # Windows venv redirectors launch a base interpreter with the same argv.
+    # Accept descendants only of an already verified clone-owned interpreter,
+    # with the same app argument/session and a Python executable name.
+    do {
+        $added = $false
+        foreach ($process in $candidates) {
+            if (-not $selected.ContainsKey([int]$process.ProcessId) -and
+                $selected.ContainsKey([int]$process.ParentProcessId) -and
+                [IO.Path]::GetFileName($process.ExecutablePath) -in @('python.exe','pythonw.exe')) {
+                $selected[[int]$process.ProcessId] = $process
+                $added = $true
+            }
+        }
+    } while ($added)
+    @($selected.Values)
+}
+# End owned-process selector
 try {
     $scheduler = New-Object -ComObject Schedule.Service
     $scheduler.Connect()
@@ -115,10 +140,8 @@ public static class ToolboxUpgradeWindows {
     $ownedPython = @((Join-Path $runtime 'venv\Scripts\python.exe'),(Join-Path $runtime 'venv\Scripts\pythonw.exe'))
     $deadline = [DateTime]::UtcNow.AddSeconds(25)
     do {
-        $windows = @(Get-CimInstance Win32_Process | Where-Object {
-            $_.SessionId -eq $session -and $_.ExecutablePath -in $ownedPython -and
-            $_.CommandLine -match $appPattern
-        })
+        $pythonProcesses = @(Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'")
+        $windows = @(Get-OwnedToolboxProcesses $pythonProcesses $ownedPython $appPattern $session)
         foreach ($window in $windows) {
             [ToolboxUpgradeWindows]::CloseOwned([uint32]$window.ProcessId)
         }
