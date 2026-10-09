@@ -1,12 +1,13 @@
 ﻿[CmdletBinding()]
-param([ValidateSet('Prepare','Finish','Rollback')][string]$Phase='Prepare',
+param([ValidateSet('Prepare','Finish','Rollback','Resume')][string]$Phase='Prepare',
       [Parameter(Mandatory=$true)][string]$RecoveryId, [switch]$Confirmed,
-      [switch]$DesktopWorker, [switch]$NoLaunch)
+      [switch]$DesktopWorker, [switch]$NoLaunch, [string]$FailedBackupName='')
 # Explicit maintenance recovery. Never stop a process or sign out Windows.
 $ErrorActionPreference='Stop'
 $env:PSModulePath=$null
 if(-not $Confirmed){throw 'User authorization to prepare/recover these exact startup entries is required.'}
 if($RecoveryId -notmatch '^[a-f0-9]{32}$'){throw 'Invalid recovery identity.'}
+if($Phase -eq 'Resume' -and $FailedBackupName -notmatch '^runtime-move-[0-9-]+$'){throw 'Resume requires the verified failed Stage backup name.'}
 $repo=Split-Path -Parent $PSScriptRoot
 $runtime=Join-Path $repo '.runtime'
 $folder=Join-Path $runtime ('runtime-recovery\'+$RecoveryId)
@@ -22,6 +23,7 @@ $taskName='CompanyAIHelpers.RuntimeRecovery.'+$sid+'.'+$RecoveryId+'.'+$Phase
 $taskSource='CompanyAIHelpers.RuntimeRecovery/v1'
 $workerArguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$PSCommandPath+'" -Phase '+$Phase+' -RecoveryId '+$RecoveryId+' -Confirmed -DesktopWorker'
 if($NoLaunch){$workerArguments+=' -NoLaunch'}
+if($Phase -eq 'Resume'){$workerArguments+=' -FailedBackupName '+$FailedBackupName}
 $executables=@('UpdreamClipboardCleaner\UpdreamClipboardCleaner.exe','CodexAnswerChime\CodexAnswerChime.exe',
     'ArctisNova5BatteryMonitor\ArctisNova5BatteryMonitor.exe','ArctisNova5BatteryMonitor\ArctisNova5StartupGate.exe')
 function Assert-Regular([string]$Path) {
@@ -49,6 +51,13 @@ function Command-Target([string]$Command){
     if($Command -match '^\s*(?:"(?<exe>[^"]+)"|(?<exe>[^\s"]+))'){return $Matches.exe}
     return ''
 }
+function Read-OptionalRunValue([string]$Path,[string]$Name){
+    if(-not (Test-Path -LiteralPath $Path)){return $null}
+    $values=Get-ItemProperty -LiteralPath $Path
+    $property=$values.PSObject.Properties[$Name]
+    if($property){return $property.Value}
+    return $null
+}
 function Restore-Startup($state,[bool]$Migrated){
     # Validate every stored entry again; JSON cannot authorize arbitrary paths.
     foreach($entry in @($state.runEntries)){
@@ -58,8 +67,8 @@ function Restore-Startup($state,[bool]$Migrated){
         Assert-Regular $target
         if(-not [IO.File]::Exists($target)){throw 'Restoration target is absent; backup retained.'}
         $command=$entry.command.Replace((Join-Path $legacy $relative),$target)
-        $current=Get-ItemPropertyValue -LiteralPath $runPath -Name $entry.name -ErrorAction SilentlyContinue
-        if($current -and $current -ne $command -and $current -ne $entry.command){throw 'Startup changed after preparation; no value overwritten.'}
+        $current=Read-OptionalRunValue $runPath $entry.name
+        if($null -ne $current -and $current -ne $command -and $current -ne $entry.command){throw 'Startup changed after preparation; no value overwritten.'}
         Set-ItemProperty -LiteralPath $runPath -Name $entry.name -Value $command
     }
     $shell=New-Object -ComObject WScript.Shell
@@ -179,6 +188,40 @@ try {
             $state.status='rolled-back';Save-Json $statePath $state
         }else{
             $migration=Join-Path $PSScriptRoot 'migrate-workspace-runtime.ps1'
+            if($Phase -eq 'Resume'){
+                # A single explicit continuation of the reviewed 0.20.11
+                # pre-copy failure. Keep Finish receipt and old backups intact.
+                $reviewedOldHashes=@('ED356E06137EF12430B773C2EC282B4AC7832AEA4375801B540BFEF437F7B7C5',
+                    'AD51AFDEC2AB1205F4570335EA5EB579B58D95F0F7E0DEE5CBB91FCDB335813F')
+                $priorReceiptPath=Join-Path $folder 'receipt-Finish.json';Assert-Regular $priorReceiptPath
+                $priorReceipt=[IO.File]::ReadAllText($priorReceiptPath)|ConvertFrom-Json
+                if($state.migrationSha256 -notin $reviewedOldHashes -or $state.resumeFromMissingNas -or
+                    $priorReceipt.ok -ne $false -or $priorReceipt.phase -ne 'Finish' -or $priorReceipt.recoveryId -ne $RecoveryId -or
+                    $priorReceipt.error -ne 'Controlled migration failed: Stage. Originals and both backups retained.'){
+                    throw 'Resume is outside the reviewed one-time pre-Stage failure.'
+                }
+                $failedBackup=Join-Path $runtime ('migration-backups\'+$FailedBackupName);Assert-Regular $failedBackup
+                foreach($name in @('stage-result.json','result.json','snapshots','originals')){
+                    if(Test-Path -LiteralPath (Join-Path $failedBackup $name)){throw 'Stage already copied or archived data; do not resume automatically.'}
+                }
+                $failurePath=Join-Path $failedBackup 'failure.json';Assert-Regular $failurePath
+                $failure=[IO.File]::ReadAllText($failurePath)|ConvertFrom-Json
+                if($failure.phase -ne 'Stage' -or $failure.error -notlike '*CompanyAIHelpers.NasSavedMappings*' -or
+                    $null -ne (Read-OptionalRunValue $runPath 'CompanyAIHelpers.NasSavedMappings')){throw 'Optional NAS failure does not match the reviewed absent-value case.'}
+                foreach($entry in @($state.runEntries)){
+                    if($null -ne (Read-OptionalRunValue $runPath $entry.name)){throw 'Prepared Run entry is no longer paused.'}
+                }
+                foreach($entry in @($state.links)){
+                    Assert-Regular $entry.path
+                    if(Test-Path -LiteralPath $entry.path){throw 'Prepared shortcut is no longer paused.'}
+                }
+                Assert-Regular $migration
+                $state|Add-Member -NotePropertyName resumeFromMissingNas -NotePropertyValue ([pscustomobject]@{
+                    previousMigrationSha256=$state.migrationSha256;failedBackupName=$FailedBackupName;
+                    finishReceiptSha256=(Hash $priorReceiptPath);authorizedAt=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()})
+                $state.migrationSha256=Hash $migration
+                Save-Json $statePath $state
+            }
             if((Hash $migration) -ne $state.migrationSha256){throw 'Prepared migrator changed; do not resume with different code.'}
             $backupName='runtime-move-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[DateTime]::UtcNow.Ticks
             foreach($migrationPhase in @('Stage','Finalize')){

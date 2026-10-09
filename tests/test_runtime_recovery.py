@@ -15,7 +15,7 @@ PS = Path(os.environ.get('WINDIR', r'C:\Windows')) / 'System32/WindowsPowerShell
 
 @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
 class RuntimeRecoveryTests(unittest.TestCase):
-    def fixture(self, repo):
+    def fixture(self, repo, real_registry=False):
         scripts = repo / 'scripts'
         scripts.mkdir()
         local = repo / 'synthetic-local'
@@ -55,17 +55,23 @@ class RuntimeRecoveryTests(unittest.TestCase):
         hooks = r"""
 function Get-CimInstance { [pscustomobject]@{Name='WorkBuddyDailyPoints.exe';ExecutablePath='FOREIGN';ProcessId=0;CommandLine='synthetic'} }
 function Get-ScheduledTask { return $null }
-function Get-ItemProperty { [CmdletBinding()]param($LiteralPath) [IO.File]::ReadAllText('RUNFILE')|ConvertFrom-Json }
+function Get-ItemProperty { [CmdletBinding()]param($LiteralPath)
+ if($LiteralPath -like 'HKCU:\Software\CompanyAIHelpers.Tests.*'){return Microsoft.PowerShell.Management\Get-ItemProperty -LiteralPath $LiteralPath}
+ [IO.File]::ReadAllText('RUNFILE')|ConvertFrom-Json
+}
 function Get-ItemPropertyValue { [CmdletBinding()]param($LiteralPath,$Name)
+ if($LiteralPath -like 'HKCU:\Software\CompanyAIHelpers.Tests.*'){return Microsoft.PowerShell.Management\Get-ItemPropertyValue -LiteralPath $LiteralPath -Name $Name}
  $values=[IO.File]::ReadAllText('RUNFILE')|ConvertFrom-Json
- $property=$values.PSObject.Properties[$Name];if($property){return $property.Value}
+ $property=$values.PSObject.Properties[$Name];if($property){return $property.Value};throw 'Missing registry value, matching Windows PowerShell 5.1'
 }
 function Set-ItemProperty { param($LiteralPath,$Name,$Value)
+ if($LiteralPath -like 'HKCU:\Software\CompanyAIHelpers.Tests.*'){Microsoft.PowerShell.Management\Set-ItemProperty -LiteralPath $LiteralPath -Name $Name -Value $Value;return}
  $values=[IO.File]::ReadAllText('RUNFILE')|ConvertFrom-Json
  $values|Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
  [IO.File]::WriteAllText('RUNFILE',($values|ConvertTo-Json -Compress))
 }
 function Remove-ItemProperty { param($LiteralPath,$Name)
+ if($LiteralPath -like 'HKCU:\Software\CompanyAIHelpers.Tests.*'){Microsoft.PowerShell.Management\Remove-ItemProperty -LiteralPath $LiteralPath -Name $Name;return}
  $values=[IO.File]::ReadAllText('RUNFILE')|ConvertFrom-Json
  $values.PSObject.Properties.Remove($Name)
  [IO.File]::WriteAllText('RUNFILE',($values|ConvertTo-Json -Compress))
@@ -90,6 +96,16 @@ function New-Object { param($ComObject)
  return $shell
 }
 """.replace('FOREIGN', quote(foreign)).replace('RUNFILE', quote(run))
+        if real_registry:
+            registry = r'HKCU:\Software\CompanyAIHelpers.Tests.' + uuid.uuid4().hex
+            # Creation, observation and cleanup use the same normal desktop
+            # context as recovery, avoiding packaged-parent registry views.
+            setup = "if($DesktopWorker -and $Phase -eq 'Prepare'){$fixtureKey='" + registry + "';" + \
+                "New-Item -Path $fixtureKey|Out-Null;$values=[IO.File]::ReadAllText('" + quote(run) + "')|ConvertFrom-Json;" + \
+                "foreach($property in $values.PSObject.Properties){New-ItemProperty -LiteralPath $fixtureKey -Name $property.Name -Value $property.Value -PropertyType String|Out-Null};" + \
+                "try{Microsoft.PowerShell.Management\\Get-ItemPropertyValue -LiteralPath $fixtureKey -Name CompanyAIHelpers.NasSavedMappings -ErrorAction SilentlyContinue;throw 'Expected missing-value exception'}" + \
+                "catch{[IO.File]::WriteAllText('" + quote(repo / 'registry-proof.txt') + "',$_.Exception.GetType().Name)}}\n"
+            run = registry
         for name in ('recover-mixed-runtime.ps1', 'migrate-workspace-runtime.ps1'):
             body = (ROOT / 'scripts' / name).read_text(encoding='utf-8-sig')
             body = body.replace("$ErrorActionPreference='Stop'", "$ErrorActionPreference='Stop'\n" + hooks, 1)
@@ -97,16 +113,32 @@ function New-Object { param($ComObject)
             body = body.replace("[Environment]::GetFolderPath('LocalApplicationData')", "'" + quote(local) + "'")
             body = body.replace("[Environment]::GetFolderPath('Startup')", "'" + quote(startup) + "'")
             body = body.replace("'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'", "'" + quote(run) + "'")
+            if real_registry and name == 'recover-mixed-runtime.ps1':
+                body = body.replace("function Assert-Regular", setup + "function Assert-Regular", 1)
+                observe = "try{if($Phase -in @('Finish','Rollback')){$fixtureKey='" + registry + "';" + \
+                    "try{$value=Microsoft.PowerShell.Management\\Get-ItemPropertyValue -LiteralPath $fixtureKey -Name Owned;" + \
+                    "[IO.File]::WriteAllText('" + quote(repo / 'registry-restored.txt') + "',[string]$value)}" + \
+                    "finally{Remove-Item -LiteralPath $fixtureKey -Force}}}catch{}\n"
+                body = body.replace('$mutex.ReleaseMutex();', observe + '$mutex.ReleaseMutex();', 1)
             (scripts / name).write_text(body, encoding='utf-8-sig')
         return recovery_id, old, startup, run, active
 
-    def phase(self, repo, recovery_id, phase, expected=0):
+    def ps_command(self, command):
+        env = dict(os.environ)
+        env.pop('PSModulePath', None)
+        return subprocess.check_output([str(PS), '-NoProfile', '-Command', command], env=env,
+                                      text=True, encoding='utf-8', errors='replace', timeout=15).strip()
+
+    def phase(self, repo, recovery_id, phase, expected=0, failed_backup=None):
         env = dict(os.environ)
         env.pop('PSModulePath', None)
         env.pop('CODEX_CLI_PATH', None)
-        result = subprocess.run([str(PS), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+        args = [str(PS), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
             str(repo / 'scripts/recover-mixed-runtime.ps1'), '-Phase', phase, '-RecoveryId', recovery_id,
-            '-Confirmed', '-NoLaunch'], env=env, capture_output=True, timeout=65)
+            '-Confirmed', '-NoLaunch']
+        if failed_backup:
+            args += ['-FailedBackupName', failed_backup]
+        result = subprocess.run(args, env=env, capture_output=True, timeout=65)
         self.assertEqual(result.returncode, expected, (result.stdout + result.stderr).decode(errors='replace'))
         receipt = json.loads((repo / '.runtime/runtime-recovery' / recovery_id / ('receipt-' + phase + '.json')).read_text())
         # Receipt precedes the worker's finally block; wait for its exact task.
@@ -197,6 +229,78 @@ function New-Object { param($ComObject)
             self.assertNotIn('Owned', json.loads(run.read_text()))
             self.assertFalse((startup / 'Owned.lnk').exists())
             self.assertEqual(json.loads((repo / '.runtime/runtime-recovery' / recovery_id / 'state.json').read_text())['status'], 'prepared')
+
+    def test_empty_startup_value_is_a_change_not_an_absent_value(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            recovery_id, old, startup, run, active = self.fixture(repo)
+            original = active.read_bytes()
+            self.phase(repo, recovery_id, 'Prepare')
+            values = json.loads(run.read_text())
+            values['Owned'] = ''
+            run.write_text(json.dumps(values))
+            self.phase(repo, recovery_id, 'Rollback', expected=1)
+            self.assertEqual(json.loads(run.read_text())['Owned'], '')
+            self.assertEqual(active.read_bytes(), original)
+
+    def test_real_registry_absent_nas_and_paused_run_finish_or_rollback(self):
+        for last_phase in ('Finish', 'Rollback'):
+            with self.subTest(phase=last_phase), tempfile.TemporaryDirectory() as folder:
+                repo = Path(folder)
+                recovery_id, old, startup, registry, active = self.fixture(repo, real_registry=True)
+                original = active.read_bytes()
+                self.assertRegex(registry, r'^HKCU:\\Software\\CompanyAIHelpers\.Tests\.[a-f0-9]{32}$')
+                prepared = self.phase(repo, recovery_id, 'Prepare')
+                self.assertEqual(prepared['pausedRunCount'], 1)
+                self.assertEqual((repo / 'registry-proof.txt').read_text(), 'PSArgumentException')
+                self.phase(repo, recovery_id, last_phase)
+                restored = (repo / 'registry-restored.txt').read_text()
+                helper = (repo / '.runtime/CompanyAIHelpers' if last_phase == 'Finish' else old) / 'CodexAnswerChime/CodexAnswerChime.exe'
+                self.assertEqual(restored, '"' + str(helper) + '" --synthetic')
+                if last_phase == 'Rollback':
+                    self.assertEqual(active.read_bytes(), original)
+                else:
+                    self.assertEqual(json.loads(active.read_text())['state'], 'complete')
+
+    def test_reviewed_resume_preserves_old_receipt_and_rejects_copied_stage(self):
+        for copied in (False, True):
+            with self.subTest(copied=copied), tempfile.TemporaryDirectory() as folder:
+                repo = Path(folder)
+                recovery_id, old, startup, run, active = self.fixture(repo)
+                self.phase(repo, recovery_id, 'Prepare')
+                operation = repo / '.runtime/runtime-recovery' / recovery_id
+                state_path = operation / 'state.json'
+                state = json.loads(state_path.read_text())
+                old_hash = 'A' * 64
+                state['migrationSha256'] = old_hash
+                state_path.write_text(json.dumps(state))
+                script = repo / 'scripts/recover-mixed-runtime.ps1'
+                script.write_text(script.read_text(encoding='utf-8-sig').replace(
+                    'ED356E06137EF12430B773C2EC282B4AC7832AEA4375801B540BFEF437F7B7C5', old_hash), encoding='utf-8-sig')
+                receipt = operation / 'receipt-Finish.json'
+                receipt.write_text(json.dumps({'ok': False, 'phase': 'Finish', 'recoveryId': recovery_id,
+                    'error': 'Controlled migration failed: Stage. Originals and both backups retained.'}))
+                receipt_bytes = receipt.read_bytes()
+                failed_name = 'runtime-move-20000102-000000'
+                backup = repo / '.runtime/migration-backups' / failed_name
+                backup.mkdir()
+                failure = backup / 'failure.json'
+                failure.write_text(json.dumps({'phase': 'Stage', 'error': 'Property CompanyAIHelpers.NasSavedMappings does not exist'}))
+                original_failure = failure.read_bytes()
+                if copied:
+                    (backup / 'snapshots').mkdir()
+                original_active = active.read_bytes()
+                self.phase(repo, recovery_id, 'Resume', expected=1 if copied else 0, failed_backup=failed_name)
+                self.assertEqual(receipt.read_bytes(), receipt_bytes)
+                self.assertEqual(failure.read_bytes(), original_failure)
+                if copied:
+                    self.assertEqual(active.read_bytes(), original_active)
+                    self.assertEqual(json.loads(state_path.read_text())['migrationSha256'], old_hash)
+                else:
+                    result = json.loads(active.read_text())
+                    self.assertEqual(result['state'], 'complete')
+                    self.assertEqual((operation / 'failed-active-original.json').read_bytes(), original_active)
+                    self.assertEqual(json.loads(state_path.read_text())['resumeFromMissingNas']['finishReceiptSha256'], hashlib.sha256(receipt_bytes).hexdigest().upper())
 
 
 if __name__ == '__main__':

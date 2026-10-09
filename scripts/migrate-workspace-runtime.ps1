@@ -106,6 +106,15 @@ foreach ($item in (Get-OwnedSourceItems ([pscustomobject]@{Path=$destination})))
     }
 }
 foreach ($source in $sources) { Assert-OwnedSource $source }
+function Read-OptionalRunValue([string]$Path,[string]$Name) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    # Get-ItemPropertyValue throws a terminating PSArgumentException for a
+    # missing value in Windows PowerShell 5.1, even with SilentlyContinue.
+    $values=Get-ItemProperty -LiteralPath $Path
+    $property=$values.PSObject.Properties[$Name]
+    if ($property) { return $property.Value }
+    return $null
+}
 if ($NoForce) {
     # Automatic migration never force-stops a helper. Refuse before copying or
     # changing startup settings while any exact legacy executable is still live.
@@ -119,7 +128,7 @@ if ($NoForce) {
     }
     $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $legacyRestoreTask = Get-ScheduledTask -TaskName ('CompanyAIHelpers.NasSavedMappings.' + $userSid) -ErrorAction SilentlyContinue
-    $legacyRestoreRun = Get-ItemPropertyValue -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'CompanyAIHelpers.NasSavedMappings' -ErrorAction SilentlyContinue
+    $legacyRestoreRun = Read-OptionalRunValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' 'CompanyAIHelpers.NasSavedMappings'
     foreach ($source in $sources) {
         $references = @($legacyRestoreRun) + @($legacyRestoreTask.Actions | ForEach-Object { $_.Execute })
         if (@($references | Where-Object { $_ -and $_.IndexOf($source.Path + '\',[StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count) {

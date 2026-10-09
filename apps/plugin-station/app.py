@@ -10,7 +10,7 @@ from core.tool_paths import TOOL_DATA_ROOT, legacy_runtime_roots
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.20.11"
+APP_VERSION = "0.20.12"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
 INSTANCE_VERSION_MARKER = TOOL_DATA_ROOT / "CodexTools" / "plugin-station-version.txt"
