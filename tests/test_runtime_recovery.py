@@ -220,7 +220,12 @@ function New-Object { param($ComObject)
                 "foreach($n in @('UpdreamClipboardCleaner.exe','CodexAnswerChime.exe'," +
                 "'ArctisNova5BatteryMonitor.exe','ArctisNova5StartupGate.exe')){" +
                 "[IO.File]::WriteAllText((Join-Path $p $n),'SYNTHETIC-PUBLIC-PROGRAM')};$global:LASTEXITCODE=0")
-            self.phase(repo, recovery_id, 'RebindStartup', desktop_worker=True)
+            script=repo/'scripts/recover-mixed-runtime.ps1'
+            body=script.read_text(encoding='utf-8-sig')
+            body=body.replace("function Get-CimInstance { [pscustomobject]@{Name='WorkBuddyDailyPoints.exe';ExecutablePath='"+str(old/'WorkBuddyDailyPoints/WorkBuddyDailyPoints.exe').replace("'","''")+"';ProcessId=0;CommandLine='synthetic'} }",
+                "function Get-CimInstance { param($ClassName) CimCmdlets\\Get-CimInstance -ClassName $ClassName -Filter ('ProcessId='+$PID) }")
+            script.write_text(body,encoding='utf-8-sig')
+            self.phase(repo, recovery_id, 'RebindStartupInteractive')
             destination = repo / '.runtime/CompanyAIHelpers'
             self.assertEqual(active.read_bytes(), original)
             self.assertIn(str(destination), json.loads(run.read_text())['Owned'])
@@ -229,6 +234,26 @@ function New-Object { param($ComObject)
             self.assertTrue((startup / 'Foreign.lnk').exists())
             self.assertFalse((destination / 'CodexTools').exists())
             self.assertEqual((old / 'CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
+            receipt=repo/'.runtime/runtime-recovery'/recovery_id/'receipt-RebindStartupInteractive.json'
+            original_receipt=receipt.read_bytes()
+            repeated=subprocess.run([str(PS),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',
+                str(script),'-Phase','RebindStartupInteractive','-RecoveryId',recovery_id,'-Confirmed','-NoLaunch'],capture_output=True,timeout=15)
+            self.assertNotEqual(repeated.returncode,0)
+            self.assertEqual(receipt.read_bytes(),original_receipt)
+
+    def test_interactive_worker_refuses_wrong_session_before_restoring_entries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo=Path(folder)
+            recovery_id,old,startup,run,active=self.fixture(repo)
+            original,_=self.prepare_fixture_state(repo,recovery_id,old,startup,run,active)
+            paused=run.read_bytes()
+            result=subprocess.run([str(PS),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',
+                str(repo/'scripts/recover-mixed-runtime.ps1'),'-Phase','RebindStartupInteractive',
+                '-RecoveryId',recovery_id,'-Confirmed','-DesktopWorker','-ExpectedSessionId','0'],capture_output=True,timeout=15)
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual(run.read_bytes(),paused)
+            self.assertEqual(active.read_bytes(),original)
+            self.assertFalse((repo/'.runtime/CompanyAIHelpers').exists())
 
     def test_new_migration_recovery_requests_fail_before_pausing_startup(self):
         with tempfile.TemporaryDirectory() as folder:

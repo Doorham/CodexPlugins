@@ -1,11 +1,12 @@
 ﻿[CmdletBinding()]
-param([ValidateSet('Prepare','Finish','Rollback','Resume','RebindStartup')][string]$Phase='Prepare',
+param([ValidateSet('Prepare','Finish','Rollback','Resume','RebindStartup','RebindStartupInteractive')][string]$Phase='Prepare',
       [Parameter(Mandatory=$true)][string]$RecoveryId, [switch]$Confirmed,
-      [switch]$DesktopWorker, [switch]$NoLaunch, [string]$FailedBackupName='')
+      [switch]$DesktopWorker, [switch]$NoLaunch, [string]$FailedBackupName='',
+      [int]$ExpectedSessionId=-1)
 # Explicit maintenance recovery. Never stop a process or sign out Windows.
 $ErrorActionPreference='Stop'
-if($Phase -notin @('Rollback','RebindStartup')){throw '整目录迁移恢复已停用；只允许恢复已暂停的原自启。个人原件与备份保持原处。'}
-$env:PSModulePath=$null
+if($Phase -notin @('Rollback','RebindStartup','RebindStartupInteractive')){throw '整目录迁移恢复已停用；只允许恢复已暂停的原自启。个人原件与备份保持原处。'}
+$env:PSModulePath=Join-Path $PSHOME 'Modules'
 if(-not $Confirmed){throw 'User authorization to prepare/recover these exact startup entries is required.'}
 if($RecoveryId -notmatch '^[a-f0-9]{32}$'){throw 'Invalid recovery identity.'}
 if($Phase -eq 'Resume' -and $FailedBackupName -notmatch '^runtime-move-[0-9-]+$'){throw 'Resume requires the verified failed Stage backup name.'}
@@ -22,8 +23,11 @@ $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $powershell=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $taskName='CompanyAIHelpers.RuntimeRecovery.'+$sid+'.'+$RecoveryId+'.'+$Phase
 $taskSource='CompanyAIHelpers.RuntimeRecovery/v1'
+$session=[Diagnostics.Process]::GetCurrentProcess().SessionId
+if($DesktopWorker -and $Phase -eq 'RebindStartupInteractive' -and ($ExpectedSessionId -lt 1 -or $session -ne $ExpectedSessionId)){throw 'Recovery must remain in the requesting Windows session.'}
 $workerArguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$PSCommandPath+'" -Phase '+$Phase+' -RecoveryId '+$RecoveryId+' -Confirmed -DesktopWorker'
 if($NoLaunch){$workerArguments+=' -NoLaunch'}
+if($Phase -eq 'RebindStartupInteractive'){$workerArguments+=' -ExpectedSessionId '+$session}
 if($Phase -eq 'Resume'){$workerArguments+=' -FailedBackupName '+$FailedBackupName}
 $executables=@('UpdreamClipboardCleaner\UpdreamClipboardCleaner.exe','CodexAnswerChime\CodexAnswerChime.exe',
     'ArctisNova5BatteryMonitor\ArctisNova5BatteryMonitor.exe','ArctisNova5BatteryMonitor\ArctisNova5StartupGate.exe')
@@ -129,6 +133,19 @@ function Restore-Startup($state,[bool]$Migrated){
 foreach($path in @($runtime,$folder,$active,$statePath,$legacy,$startup)){Assert-Regular $path}
 [IO.Directory]::CreateDirectory($folder)|Out-Null
 $receipt=Join-Path $folder ('receipt-'+$Phase+'.json')
+if(-not $DesktopWorker -and $Phase -eq 'RebindStartupInteractive'){
+    if($session -lt 1){throw 'An interactive Windows session is required.'}
+    if([IO.File]::Exists($receipt)){throw 'This interactive recovery already has a receipt; preserve it and do not repeat.'}
+    # Explorer launches in the interactive desktop; no task registration or elevation.
+    $desktopShell=New-Object -ComObject Shell.Application
+    $desktopShell.ShellExecute($powershell,$workerArguments,$repo,'open',0)
+    $deadline=[DateTime]::UtcNow.AddSeconds(50)
+    while(-not [IO.File]::Exists($receipt) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 200}
+    if(-not [IO.File]::Exists($receipt)){throw 'Interactive recovery has not acknowledged completion; do not repeat or terminate it.'}
+    $result=[IO.File]::ReadAllText($receipt)|ConvertFrom-Json
+    $result|ConvertTo-Json -Compress
+    if(-not $result.ok){exit 1};exit 0
+}
 if(-not $DesktopWorker){
     $scheduler=New-Object -ComObject Schedule.Service;$scheduler.Connect();$tasks=$scheduler.GetFolder('\')
     $definition=$scheduler.NewTask(0)
@@ -160,7 +177,7 @@ try {
     $state=[IO.File]::ReadAllText($statePath)|ConvertFrom-Json
     if($state.recoveryId -ne $RecoveryId -or $state.ownerSid -ne $sid -or $state.status -ne 'prepared'){throw 'Recovery ownership/state does not match.'}
     if((Hash $active) -ne $state.originalActiveSha256){throw 'Active migration changed; original backup retained.'}
-    if ($Phase -eq 'RebindStartup') {
+    if ($Phase -in @('RebindStartup','RebindStartupInteractive')) {
         # Build/copy only the approved public programs. No private tree migration.
         & (Join-Path $PSScriptRoot 'build-helpers.ps1') | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Public helper build failed; startup retained.' }

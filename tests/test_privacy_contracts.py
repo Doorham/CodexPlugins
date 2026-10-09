@@ -78,6 +78,9 @@ class PrivacyContracts(unittest.TestCase):
         with patch.object(service,'_plugin_status',side_effect=status), patch.object(service,'_sync_keep_alive_lifecycle') as lifecycle:
             result=service.dashboard()
         lifecycle.assert_not_called()
+        import re
+        version=re.search(r'^APP_VERSION\s*=\s*"([^"]+)"',(APP/'app.py').read_text(),re.MULTILINE).group(1)
+        self.assertEqual(result['app']['version'],version)
         self.assertEqual([c['id'] for c in result['plugins']],['broken','working'])
 
     def test_manual_stop_survives_restart_and_prevents_keepalive(self):
