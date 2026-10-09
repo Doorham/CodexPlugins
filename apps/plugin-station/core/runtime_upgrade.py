@@ -108,7 +108,7 @@ def request_runtime_upgrade(repo: Path, *, caller_pid: int | None = None,
             for attempt in range(10):
                 try:
                     return json.loads(state_path.read_text(encoding='utf-8-sig'))
-                except PermissionError:
+                except (PermissionError, FileNotFoundError):
                     if attempt == 9:
                         raise
                     time.sleep(0.02)

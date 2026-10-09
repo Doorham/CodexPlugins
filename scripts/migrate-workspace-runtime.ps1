@@ -58,10 +58,51 @@ function Assert-OwnedSource($source) {
     if ((Get-Item -LiteralPath $absolute -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
         throw 'Migration source is a reparse point.'
     }
-    $unknown = @(Get-ChildItem -LiteralPath $absolute -Force | Where-Object { -not $_.PSIsContainer -or $_.Name -notin $allowed })
-    if ($unknown.Count) { throw 'Source contains unrecognized files; nothing will be removed.' }
-    if (@(Get-ChildItem -LiteralPath $absolute -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
-        throw 'Reparse point found in migration source.'
+    foreach ($item in (Get-OwnedSourceItems $source)) {
+        if (-not $item.PSIsContainer) { throw 'Owned component is not a directory.' }
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            @(Get-ChildItem -LiteralPath $item.FullName -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
+            throw 'Reparse point found in owned migration component.'
+        }
+    }
+}
+function Get-OwnedSourceItems($source) {
+    if (Test-Path -LiteralPath $source.Path) {
+        Get-ChildItem -LiteralPath $source.Path -Force | Where-Object { $_.Name -in $allowed }
+    }
+}
+function Get-OwnedSourceFiles($source) {
+    foreach ($item in (Get-OwnedSourceItems $source)) {
+        Get-ChildItem -LiteralPath $item.FullName -File -Recurse -Force
+    }
+}
+function Get-OwnedRelative([string]$Path,$source) {
+    if ($Path -and $Path.StartsWith($source.Path + '\',[StringComparison]::OrdinalIgnoreCase)) {
+        $relative=$Path.Substring($source.Path.Length + 1)
+        if (($relative -split '\\')[0] -in $allowed) { return $relative }
+    }
+    return $null
+}
+function Convert-OwnedCommand([string]$Command) {
+    # Rewrite only an executable already scoped to an owned component. Keep
+    # unrelated tools, including their arguments and startup entries, intact.
+    if ($Command -notmatch '^\s*(?:"(?<exe>[^"]+)"|(?<exe>[^\s"]+))') { return $Command }
+    $executable=$Matches.exe
+    foreach ($source in $sources) {
+        if (Get-OwnedRelative $executable $source) {
+            foreach ($component in $allowed) {
+                $Command=$Command.Replace($source.Path + '\' + $component + '\',$destination + '\' + $component + '\')
+            }
+        }
+    }
+    return $Command
+}
+# A matching component in the workspace must also be an ordinary directory.
+# Never copy private state through a nested destination junction.
+foreach ($item in (Get-OwnedSourceItems ([pscustomobject]@{Path=$destination}))) {
+    if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        @(Get-ChildItem -LiteralPath $item.FullName -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
+        throw 'Reparse point or invalid owned workspace component; migration stopped.'
     }
 }
 foreach ($source in $sources) { Assert-OwnedSource $source }
@@ -71,7 +112,7 @@ if ($NoForce) {
     foreach ($process in (Get-CimInstance Win32_Process)) {
         if (-not $process.ExecutablePath) { continue }
         foreach ($source in $sources) {
-            if ($process.ExecutablePath.StartsWith($source.Path + '\',[StringComparison]::OrdinalIgnoreCase)) {
+            if (Get-OwnedRelative $process.ExecutablePath $source) {
                 throw 'Exit the legacy toolbox helpers normally, then contact maintenance to resume; originals are retained.'
             }
         }
@@ -102,7 +143,7 @@ if ($Phase -eq 'Stage') {
     $seenData = @{}
     foreach ($source in $sources) {
         if (-not (Test-Path -LiteralPath $source.Path)) { continue }
-        foreach ($file in (Get-ChildItem -LiteralPath $source.Path -File -Recurse -Force)) {
+        foreach ($file in (Get-OwnedSourceFiles $source)) {
             $relative = $file.FullName.Substring($source.Path.Length + 1)
             if (Is-GeneratedFile $relative) { continue }
             $hash = Get-DataHash $file.FullName
@@ -120,7 +161,7 @@ if ($Phase -eq 'Stage') {
         if (-not (Test-Path -LiteralPath $source.Path)) { continue }
         $snapshot = Join-Path $backupRoot ('snapshots\' + $source.Id)
         New-Item -ItemType Directory -Path $snapshot -Force | Out-Null
-        foreach ($item in (Get-ChildItem -LiteralPath $source.Path -Force)) {
+        foreach ($item in (Get-OwnedSourceItems $source)) {
             Copy-Item -LiteralPath $item.FullName -Destination $snapshot -Recurse -Force
             foreach ($file in (Get-ChildItem -LiteralPath $item.FullName -File -Recurse -Force)) {
                 $relative = $file.FullName.Substring($source.Path.Length + 1)
@@ -163,9 +204,8 @@ $running = @()
 foreach ($process in (Get-CimInstance Win32_Process)) {
     if (-not $process.ExecutablePath) { continue }
     foreach ($source in $sources) {
-        if ($process.ExecutablePath.StartsWith($source.Path + '\',[StringComparison]::OrdinalIgnoreCase)) {
-            $relative = $process.ExecutablePath.Substring($source.Path.Length + 1)
-            if (($relative -split '\\')[0] -notin $allowed) { throw 'Unknown executable in source.' }
+        $relative=Get-OwnedRelative $process.ExecutablePath $source
+        if ($relative) {
             if ($NoForce) { throw 'A legacy helper restarted; migration stopped without terminating it.' }
             $running += [pscustomobject]@{Id=$process.ProcessId; Relative=$relative}
             # Stop-ScheduledTask may have already terminated this same worker.
@@ -183,7 +223,7 @@ foreach ($process in (Get-CimInstance Win32_Process)) {
 # destination still equals our staged copy; never overwrite a newer profile.
 foreach ($source in $sources) {
     if (-not (Test-Path -LiteralPath $source.Path)) { continue }
-    foreach ($file in (Get-ChildItem -LiteralPath $source.Path -File -Recurse -Force)) {
+    foreach ($file in (Get-OwnedSourceFiles $source)) {
         $relative = $file.FullName.Substring($source.Path.Length + 1)
         $target = Join-Path $destination $relative
         $snapshot = Join-Path $backupRoot ('snapshots\' + $source.Id + '\' + $relative)
@@ -212,8 +252,7 @@ if (Test-Path -LiteralPath $runPath) {
                 }
             }
         }
-        $updated = $command
-        foreach ($source in $sources) { $updated = $updated.Replace($source.Path + '\',$destination + '\') }
+        $updated = Convert-OwnedCommand $command
         if ($updated -ne $command) {
             $runBackups += @{name=$property.Name;command=$command}
             Set-ItemProperty -LiteralPath $runPath -Name $property.Name -Value $updated
@@ -235,7 +274,10 @@ foreach ($folder in $startupSources | Select-Object -Unique) {
     foreach ($linkFile in (Get-ChildItem -LiteralPath $folder -Filter '*.lnk')) {
         $link = $shell.CreateShortcut($linkFile.FullName)
         $oldTarget = $link.TargetPath; $newTarget = $oldTarget
-        foreach ($source in $sources) { $newTarget = $newTarget.Replace($source.Path + '\',$destination + '\') }
+        foreach ($source in $sources) {
+            $relative=Get-OwnedRelative $oldTarget $source
+            if ($relative) { $newTarget=Join-Path $destination $relative }
+        }
         if ($newTarget -eq $oldTarget) { continue }
         $linkBackup = Join-Path $backupRoot ('startup\' + $startupEntryIndex + '-' + $linkFile.Name)
         New-Item -ItemType Directory -Path (Split-Path -Parent $linkBackup) -Force | Out-Null
@@ -273,15 +315,21 @@ if ($priorRestoreEnabled -and -not $NoForce) {
 foreach ($source in $sources) {
     if (-not (Test-Path -LiteralPath $source.Path)) { continue }
     Assert-OwnedSource $source
-    $archive = Join-Path $backupRoot ('originals\' + $source.Id)
-    if (Test-Path -LiteralPath $archive) { throw 'Original archive already exists; use a new staged backup.' }
-    New-Item -ItemType Directory -Path (Split-Path -Parent $archive) -Force | Out-Null
-    # Both resolved targets were validated above; keep a recoverable original, never delete.
-    Move-Item -LiteralPath $source.Path -Destination $archive
+    foreach ($item in (Get-OwnedSourceItems $source)) {
+        $archive = [IO.Path]::GetFullPath((Join-Path $backupRoot ('originals\' + $source.Id + '\' + $item.Name)))
+        if (-not $archive.StartsWith($backupRoot+'\',[StringComparison]::OrdinalIgnoreCase) -or
+            -not $item.FullName.StartsWith($source.Path+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Owned archive target escaped its root.' }
+        if (Test-Path -LiteralPath $archive) { throw 'Original component archive exists; use a new staged backup.' }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $archive) -Force | Out-Null
+        # Retain unrelated directories and programs at their original paths.
+        Move-Item -LiteralPath $item.FullName -Destination $archive
+    }
 }
 foreach ($process in $running | Where-Object { $_.Relative -notlike 'CodexTools\CompanyAccess\*' }) {
     $program = Join-Path $destination $process.Relative
     if (Test-Path -LiteralPath $program) { Start-Process -FilePath $program -WorkingDirectory (Split-Path -Parent $program) -WindowStyle Hidden }
 }
-[pscustomobject]@{phase='complete';destination=$destination;backup=$backupRoot;oldRootsRemain=@($sources | Where-Object {Test-Path -LiteralPath $_.Path}).Count} |
+[pscustomobject]@{phase='complete';destination=$destination;backup=$backupRoot;
+    oldRootsRemain=@($sources | Where-Object { @(Get-OwnedSourceItems $_).Count }).Count;
+    retainedSourceRootCount=@($sources | Where-Object { Test-Path -LiteralPath $_.Path }).Count} |
     ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $backupRoot 'result.json') -Encoding UTF8

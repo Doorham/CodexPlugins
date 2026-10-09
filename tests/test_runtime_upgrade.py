@@ -191,6 +191,71 @@ class RuntimeUpgradeTests(unittest.TestCase):
             self.assertFalse((repo / '.runtime/CompanyAIHelpers/UpdreamClipboardCleaner/settings.json').exists())
             self.assertEqual((source / 'settings.json').read_text(), '{"fixture":1}')
 
+    @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows PowerShell required')
+    def test_partial_migration_retains_extra_tools_their_processes_and_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            self.fixture(repo)
+            local = repo / 'synthetic-local'
+            old = local / 'CompanyAIHelpers'
+            private = old / 'CodexTools/PrivatePlugins/Fixture/settings.json'
+            private.parent.mkdir(parents=True)
+            private.write_bytes(b'{"fixture":1}')
+            helper = old / 'CodexAnswerChime/CodexAnswerChime.exe'
+            helper.parent.mkdir()
+            helper.write_bytes(b'synthetic non-executable')
+            extras = {}
+            for name in ('MigrationBackups', 'WeTypeAweSunDirectTrial', 'WorkBuddyDailyPoints'):
+                path = old / name / 'preserved.bin'
+                path.parent.mkdir()
+                path.write_bytes(('synthetic-' + name).encode())
+                extras[path] = path.read_bytes()
+            startup = repo / 'synthetic-startup'
+            startup.mkdir()
+            run = repo / 'synthetic-run'
+            run.write_text('fixture')
+            quote = lambda p: str(p).replace("'", "''")
+            foreign_exe = old / 'WorkBuddyDailyPoints/WorkBuddyDailyPoints.exe'
+            updated = repo / 'startup-updated.txt'
+            hooks = """
+function Get-CimInstance { [pscustomobject]@{Name='WorkBuddyDailyPoints.exe';ExecutablePath='FOREIGN';ProcessId=0;CommandLine='fixture'} }
+function Get-ScheduledTask { return $null }
+function Get-ItemPropertyValue { return $null }
+function Get-ItemProperty { [pscustomobject]@{Owned='"HELPER"';Foreign='"FOREIGN" --fixture "OWNEDARG"'} }
+function Set-ItemProperty { param($LiteralPath,$Name,$Value)
+ if ($Name -ne 'Owned') {throw 'Unrelated startup was changed'}
+ [IO.File]::WriteAllText('UPDATED',[string]$Value)
+}
+function Stop-Process { throw 'Unexpected process termination' }
+function Stop-ScheduledTask { throw 'Unexpected task termination' }
+""".replace('FOREIGN', quote(foreign_exe)).replace('HELPER', quote(helper)).replace(
+                'OWNEDARG', quote(private)).replace('UPDATED', quote(updated))
+            body = (ROOT / 'scripts/migrate-workspace-runtime.ps1').read_text(encoding='utf-8-sig')
+            body = body.replace("$ErrorActionPreference = 'Stop'", "$ErrorActionPreference = 'Stop'\n" + hooks, 1)
+            body = body.replace("$local = [Environment]::GetFolderPath('LocalApplicationData')", "$local = '" + quote(local) + "'", 1)
+            body = body.replace("$runPath = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'", "$runPath = '" + quote(run) + "'", 1)
+            body = body.replace("$startup = [Environment]::GetFolderPath('Startup')", "$startup = '" + quote(startup) + "'", 1)
+            script = repo / 'scripts/migrate-workspace-runtime.ps1'
+            script.write_text(body, encoding='utf-8-sig')
+            environment = dict(os.environ)
+            environment.pop('PSModulePath', None)
+            for phase in ('Stage', 'Finalize'):
+                result = subprocess.run([str(PS), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+                                         '-Phase', phase, '-NoForce', '-BackupName', 'runtime-move-20000101-000000'],
+                                        env=environment, capture_output=True, timeout=20)
+                failure = repo / '.runtime/migration-backups/runtime-move-20000101-000000/failure.json'
+                self.assertEqual(result.returncode, 0, failure.read_text(encoding='utf-8-sig') if failure.exists()
+                                 else result.stderr.decode(errors='replace'))
+                for path, original in extras.items():
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertFalse((repo / '.runtime/CompanyAIHelpers' / path.relative_to(old)).exists())
+            backup = repo / '.runtime/migration-backups/runtime-move-20000101-000000'
+            self.assertEqual(json.loads((backup / 'result.json').read_text(encoding='utf-8-sig'))['oldRootsRemain'], 0)
+            self.assertEqual((repo / '.runtime/CompanyAIHelpers/CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
+            self.assertEqual((backup / 'originals/normal/CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
+            self.assertFalse((old / 'CodexTools').exists())
+            self.assertEqual(updated.read_text(), '"' + str(repo / '.runtime/CompanyAIHelpers/CodexAnswerChime/CodexAnswerChime.exe') + '"')
+
     @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
     def test_owned_selector_accepts_venv_children_but_rejects_other_apps_and_sessions(self):
         body = (ROOT / 'scripts/auto-migrate-runtime.ps1').read_text(encoding='utf-8-sig')
@@ -307,7 +372,7 @@ exit 0
             while time.monotonic() < deadline:
                 try:
                     state = json.loads(state_path.read_text(encoding='utf-8-sig'))
-                except PermissionError:  # Windows atomic replacement holds a brief exclusive handle.
+                except (PermissionError, FileNotFoundError):  # Windows replacement can briefly hide the name.
                     time.sleep(0.02)
                     continue
                 if state['state'] in ('complete', 'failed'):
@@ -366,7 +431,7 @@ if ($Phase -eq 'Finalize') {
             while time.monotonic() < deadline:
                 try:
                     state = json.loads(state_path.read_text(encoding='utf-8-sig'))
-                except PermissionError:
+                except (PermissionError, FileNotFoundError):
                     time.sleep(0.05)
                     continue
                 if state['state'] in ('complete', 'failed'):

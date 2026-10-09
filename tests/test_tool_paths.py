@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps/plugin-station"))
-from core.tool_paths import TOOL_DATA_ROOT, expand_tool_path, legacy_runtime_roots
+from core.tool_paths import LEGACY_COMPONENTS, TOOL_DATA_ROOT, expand_tool_path, legacy_runtime_roots
 from core.company_access import CompanyAccess
 
 
@@ -50,15 +50,33 @@ class ToolPathsTests(unittest.TestCase):
             cache = local / 'Packages/OpenAI.Codex_example/LocalCache/Local/CompanyAIHelpers'
             normal.mkdir()
             cache.mkdir(parents=True)
+            (normal / 'CodexTools').mkdir()
+            (cache / 'CodexAnswerChime').mkdir()
             (local / 'Packages/Unrelated.App/LocalCache/Local/CompanyAIHelpers').mkdir(parents=True)
             self.assertEqual(set(legacy_runtime_roots(local)), {normal, cache})
             self.assertEqual(legacy_runtime_roots(local / 'Missing'), [])
+
+    def test_extra_backup_trial_and_private_tools_do_not_block_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            local = Path(folder)
+            old = local / 'CompanyAIHelpers'
+            for name in ('MigrationBackups', 'WeTypeAweSunDirectTrial', 'WorkBuddyDailyPoints'):
+                (old / name).mkdir(parents=True)
+            self.assertEqual(legacy_runtime_roots(local), [])
+            (old / 'CodexTools').mkdir()
+            self.assertEqual(legacy_runtime_roots(local), [old])
+
+    def test_startup_and_migrator_scope_the_same_registered_components(self):
+        import re
+        migration = (ROOT / 'scripts/migrate-workspace-runtime.ps1').read_text(encoding='utf-8-sig')
+        names = set(re.findall(r"'([^']+)'", re.search(r'\$allowed = @\((.*?)\)', migration, re.S).group(1)))
+        self.assertEqual(names, set(LEGACY_COMPONENTS))
 
     def test_startup_guards_before_creating_an_empty_private_layer(self):
         app = (ROOT / 'apps/plugin-station/app.py').read_text(encoding='utf-8')
         self.assertLess(app.index('if legacy_runtime_roots():'), app.index('mutex = acquire_single_instance()'))
         migration = (ROOT / 'scripts/migrate-workspace-runtime.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn('if ($priorRestoreEnabled)', migration)
+        self.assertIn('if ($priorRestoreEnabled -and -not $NoForce)', migration)
         self.assertIn('a.refresh_connector()', migration)
         self.assertIn('Complete Exit', migration)
         self.assertNotIn("Start-Process -FilePath (Join-Path $env:WINDIR 'System32\\wscript.exe')", migration)
