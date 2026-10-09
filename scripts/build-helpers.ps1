@@ -1,4 +1,6 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿[CmdletBinding()]
+param([ValidateSet('All','StartupRecovery')][string]$Scope='All')
+$ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $output = Join-Path $repoRoot 'artifacts\helpers'
@@ -31,9 +33,6 @@ $testSource = Join-Path $repoRoot 'tests\clipboard-verification\Program.cs'
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\UpdreamClipboardCleaner.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll $clipboardSource $runtimeControlSource
 if ($LASTEXITCODE -ne 0) { throw 'Updream Clipboard Cleaner build failed.' }
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\WeTypeAweSunBridge.exe" "/win32icon:$voiceBridgeIcon" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $voiceBridgeSource
-if ($LASTEXITCODE -ne 0) { throw 'WeType AweSun Bridge build failed.' }
-
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\CodexAnswerChime.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll $chimeSource $runtimePathsSource $runtimeControlSource
 if ($LASTEXITCODE -ne 0) { throw 'Codex Answer Chime build failed.' }
 
@@ -42,6 +41,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Arctis Nova 5 startup gate build failed.' }
 
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\ArctisNova5BatteryMonitor.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $arctisMonitorSource $runtimeControlSource
 if ($LASTEXITCODE -ne 0) { throw 'Arctis Nova 5 battery monitor build failed.' }
+
+if($Scope -eq 'StartupRecovery'){return}
+
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\WeTypeAweSunBridge.exe" "/win32icon:$voiceBridgeIcon" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $voiceBridgeSource
+if ($LASTEXITCODE -ne 0) { throw 'WeType AweSun Bridge build failed.' }
 
 & $csc /nologo /optimize+ /target:exe /platform:anycpu "/out:$output\ClipboardVerification.exe" /reference:System.dll /reference:System.Core.dll $testSource
 if ($LASTEXITCODE -ne 0) { throw 'Clipboard verification build failed.' }

@@ -364,7 +364,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex插件站",
-                "version": "0.20.14",
+                "version": "0.20.15",
                 "developers": ["Doorham", "XY", "Althy", "Oreo"],
                 "pluginCount": len(cards),
             },

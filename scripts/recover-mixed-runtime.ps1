@@ -1,14 +1,16 @@
 ﻿[CmdletBinding()]
-param([ValidateSet('Prepare','Finish','Rollback','Resume','RebindStartup','RebindStartupInteractive')][string]$Phase='Prepare',
+param([ValidateSet('Prepare','Finish','Rollback','Resume','RebindStartup','RebindStartupInteractive','RebindStartupLocal')][string]$Phase='Prepare',
       [Parameter(Mandatory=$true)][string]$RecoveryId, [switch]$Confirmed,
       [switch]$DesktopWorker, [switch]$NoLaunch, [string]$FailedBackupName='',
-      [int]$ExpectedSessionId=-1)
+      [int]$ExpectedSessionId=-1, [string]$AttemptId='')
 # Explicit maintenance recovery. Never stop a process or sign out Windows.
 $ErrorActionPreference='Stop'
-if($Phase -notin @('Rollback','RebindStartup','RebindStartupInteractive')){throw '整目录迁移恢复已停用；只允许恢复已暂停的原自启。个人原件与备份保持原处。'}
+if($Phase -notin @('Rollback','RebindStartup','RebindStartupInteractive','RebindStartupLocal')){throw '整目录迁移恢复已停用；只允许恢复已暂停的原自启。个人原件与备份保持原处。'}
 $env:PSModulePath=Join-Path $PSHOME 'Modules'
 if(-not $Confirmed){throw 'User authorization to prepare/recover these exact startup entries is required.'}
 if($RecoveryId -notmatch '^[a-f0-9]{32}$'){throw 'Invalid recovery identity.'}
+if($Phase -eq 'RebindStartupLocal' -and $AttemptId -notmatch '^[a-f0-9]{32}$'){throw 'Local recovery requires a fresh attempt identity.'}
+if($Phase -ne 'RebindStartupLocal' -and $AttemptId){throw 'Attempt identity is only valid for local recovery.'}
 if($Phase -eq 'Resume' -and $FailedBackupName -notmatch '^runtime-move-[0-9-]+$'){throw 'Resume requires the verified failed Stage backup name.'}
 $repo=Split-Path -Parent $PSScriptRoot
 $runtime=Join-Path $repo '.runtime'
@@ -24,10 +26,11 @@ $powershell=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.ex
 $taskName='CompanyAIHelpers.RuntimeRecovery.'+$sid+'.'+$RecoveryId+'.'+$Phase
 $taskSource='CompanyAIHelpers.RuntimeRecovery/v1'
 $session=[Diagnostics.Process]::GetCurrentProcess().SessionId
-if($DesktopWorker -and $Phase -eq 'RebindStartupInteractive' -and ($ExpectedSessionId -lt 1 -or $session -ne $ExpectedSessionId)){throw 'Recovery must remain in the requesting Windows session.'}
+if($DesktopWorker -and $Phase -in @('RebindStartupInteractive','RebindStartupLocal') -and ($ExpectedSessionId -lt 1 -or $session -ne $ExpectedSessionId)){throw 'Recovery must remain in the requesting Windows session.'}
 $workerArguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$PSCommandPath+'" -Phase '+$Phase+' -RecoveryId '+$RecoveryId+' -Confirmed -DesktopWorker'
 if($NoLaunch){$workerArguments+=' -NoLaunch'}
-if($Phase -eq 'RebindStartupInteractive'){$workerArguments+=' -ExpectedSessionId '+$session}
+if($Phase -in @('RebindStartupInteractive','RebindStartupLocal')){$workerArguments+=' -ExpectedSessionId '+$session}
+if($Phase -eq 'RebindStartupLocal'){$workerArguments+=' -AttemptId '+$AttemptId}
 if($Phase -eq 'Resume'){$workerArguments+=' -FailedBackupName '+$FailedBackupName}
 $executables=@('UpdreamClipboardCleaner\UpdreamClipboardCleaner.exe','CodexAnswerChime\CodexAnswerChime.exe',
     'ArctisNova5BatteryMonitor\ArctisNova5BatteryMonitor.exe','ArctisNova5BatteryMonitor\ArctisNova5StartupGate.exe')
@@ -57,16 +60,57 @@ function Command-Target([string]$Command){
     return ''
 }
 function Read-OptionalRunValue([string]$Path,[string]$Name){
+    if($Path.StartsWith('HKCU:\',[StringComparison]::OrdinalIgnoreCase)){
+        $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Path.Substring(6))
+        if($null -eq $key){return $null}
+        try{return $key.GetValue($Name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}finally{$key.Dispose()}
+    }
     if(-not (Test-Path -LiteralPath $Path)){return $null}
     $values=Get-ItemProperty -LiteralPath $Path
     $property=$values.PSObject.Properties[$Name]
     if($property){return $property.Value}
     return $null
 }
+function Write-RunValue([string]$Name,[string]$Original,[string]$Desired){
+    # Use the existing toolbox runtime; direct PowerShell writes may be denied
+    # even when the same approved startup operation works in the toolbox.
+    $python=Join-Path $repo '.runtime\venv\Scripts\python.exe'
+    $writer=Join-Path $PSScriptRoot 'restore-startup-run.py'
+    Assert-Regular $python;Assert-Regular $writer
+    if(-not [IO.File]::Exists($python) -or -not [IO.File]::Exists($writer)){throw 'Toolbox startup writer is absent.'}
+    $entries=@($state.runEntries)
+    $matching=@(for($index=0;$index -lt $entries.Count;$index++){
+        if($entries[$index].name -ceq $Name -and $entries[$index].command -ceq $Original){$index}
+    })
+    if($matching.Count -ne 1){throw 'Run write must match one prepared entry.'}
+    $mode=if($Original -ceq $Desired){'legacy'}else{'current'}
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName=$python
+    $info.Arguments='"'+$writer+'" --recovery-id '+$RecoveryId+' --session '+$session+' --restore-to '+$mode+' --entry-index '+$matching[0]
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle='Hidden'
+    $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $process=[Diagnostics.Process]::Start($info)
+    try{
+        $output=$process.StandardOutput.ReadToEnd();$errorOutput=$process.StandardError.ReadToEnd();$process.WaitForExit()
+        $result=$output|ConvertFrom-Json
+        if($process.ExitCode -ne 0 -or $result.ok -ne $true){
+            if($result.failureCategory -eq 'access_denied'){throw [UnauthorizedAccessException]::new('Approved Run write denied.')}
+            throw 'Approved Run write did not complete.'
+        }
+    }finally{$process.Dispose()}
+}
+function Set-ValidatedRunValue([string]$Name,[string]$Original,[string]$Desired){
+    $current=Read-OptionalRunValue $runPath $Name
+    if($null -ne $current -and $current -ne $Desired -and $current -ne $Original){throw 'Startup changed at write time; no value overwritten.'}
+    if($current -ceq $Desired){return}
+    Write-RunValue $Name $Original $Desired
+    if((Read-OptionalRunValue $runPath $Name) -cne $Desired){throw 'Run restoration readback failed.'}
+}
 function Restore-Startup($state,[bool]$Migrated){
     # Preflight all entries before changing any; never compare personal files.
     $shell=New-Object -ComObject WScript.Shell
     foreach($entry in @($state.runEntries)) {
+        $script:recoveryOperation='startup_run'
         $relative=Owned-Relative (Command-Target $entry.command)
         if(-not $relative){throw 'Unapproved startup target.'}
         $target=if($Migrated){Join-Path $destination $relative}else{Join-Path $legacy $relative}
@@ -77,6 +121,7 @@ function Restore-Startup($state,[bool]$Migrated){
         if($null -ne $current -and $current -ne $desired -and $current -ne $entry.command){throw 'Startup changed; none overwritten.'}
     }
     foreach($entry in @($state.links)) {
+        $script:recoveryOperation='startup_shortcut'
         $relative=Owned-Relative $entry.target
         $path=[IO.Path]::GetFullPath($entry.path)
         $copy=[IO.Path]::GetFullPath((Join-Path $folder $entry.backup))
@@ -94,6 +139,7 @@ function Restore-Startup($state,[bool]$Migrated){
     }
     # Validate every stored entry again; JSON cannot authorize arbitrary paths.
     foreach($entry in @($state.runEntries)){
+        $script:recoveryOperation='startup_run'
         $relative=Owned-Relative (Command-Target $entry.command)
         if(-not $relative){throw 'Startup backup is outside the approved components.'}
         $target=if($Migrated){Join-Path $destination $relative}else{Join-Path $legacy $relative}
@@ -102,10 +148,11 @@ function Restore-Startup($state,[bool]$Migrated){
         $command=$entry.command.Replace((Join-Path $legacy $relative),$target)
         $current=Read-OptionalRunValue $runPath $entry.name
         if($null -ne $current -and $current -ne $command -and $current -ne $entry.command){throw 'Startup changed after preparation; no value overwritten.'}
-        Set-ItemProperty -LiteralPath $runPath -Name $entry.name -Value $command
+        Set-ValidatedRunValue $entry.name $entry.command $command
     }
     $shell=New-Object -ComObject WScript.Shell
     foreach($entry in @($state.links)){
+        $script:recoveryOperation='startup_shortcut'
         $relative=Owned-Relative $entry.target
         $path=[IO.Path]::GetFullPath($entry.path)
         $copy=[IO.Path]::GetFullPath((Join-Path $folder $entry.backup))
@@ -133,7 +180,14 @@ function Restore-Startup($state,[bool]$Migrated){
 foreach($path in @($runtime,$folder,$active,$statePath,$legacy,$startup)){Assert-Regular $path}
 [IO.Directory]::CreateDirectory($folder)|Out-Null
 $receipt=Join-Path $folder ('receipt-'+$Phase+'.json')
-if(-not $DesktopWorker -and $Phase -eq 'RebindStartupInteractive'){
+if($Phase -eq 'RebindStartupLocal'){$receipt=Join-Path $folder ('receipt-'+$Phase+'-'+$AttemptId+'.json')}
+function Write-ReceiptSummary($result){
+    if($Phase -eq 'RebindStartupLocal'){
+        $result|Select-Object ok,phase,operation,failureCategory,failureLine,status|ConvertTo-Json -Compress
+    }else{$result|ConvertTo-Json -Compress}
+}
+if([IO.File]::Exists($receipt)){throw 'This recovery attempt already has a receipt; preserve it and do not repeat.'}
+if(-not $DesktopWorker -and $Phase -in @('RebindStartupInteractive','RebindStartupLocal')){
     if($session -lt 1){throw 'An interactive Windows session is required.'}
     if([IO.File]::Exists($receipt)){throw 'This interactive recovery already has a receipt; preserve it and do not repeat.'}
     # Explorer launches in the interactive desktop; no task registration or elevation.
@@ -143,7 +197,7 @@ if(-not $DesktopWorker -and $Phase -eq 'RebindStartupInteractive'){
     while(-not [IO.File]::Exists($receipt) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 200}
     if(-not [IO.File]::Exists($receipt)){throw 'Interactive recovery has not acknowledged completion; do not repeat or terminate it.'}
     $result=[IO.File]::ReadAllText($receipt)|ConvertFrom-Json
-    $result|ConvertTo-Json -Compress
+    Write-ReceiptSummary $result
     if(-not $result.ok){exit 1};exit 0
 }
 if(-not $DesktopWorker){
@@ -173,15 +227,20 @@ if(-not $DesktopWorker){
 $mutex=[Threading.Mutex]::new($false,('Local\CompanyAIHelpers.RuntimeRecovery.'+$RecoveryId))
 if(-not $mutex.WaitOne(0)){throw 'Another recovery worker owns this operation.'}
 $state=$null
+$script:recoveryOperation='recovery_record'
 try {
     $state=[IO.File]::ReadAllText($statePath)|ConvertFrom-Json
     if($state.recoveryId -ne $RecoveryId -or $state.ownerSid -ne $sid -or $state.status -ne 'prepared'){throw 'Recovery ownership/state does not match.'}
     if((Hash $active) -ne $state.originalActiveSha256){throw 'Active migration changed; original backup retained.'}
-    if ($Phase -in @('RebindStartup','RebindStartupInteractive')) {
+    if ($Phase -in @('RebindStartup','RebindStartupInteractive','RebindStartupLocal')) {
         # Build/copy only the approved public programs. No private tree migration.
-        & (Join-Path $PSScriptRoot 'build-helpers.ps1') | Out-Null
+        $script:recoveryOperation='public_build'
+        if($Phase -eq 'RebindStartupLocal'){
+            & (Join-Path $PSScriptRoot 'build-helpers.ps1') -Scope StartupRecovery | Out-Null
+        }else{& (Join-Path $PSScriptRoot 'build-helpers.ps1') | Out-Null}
         if ($LASTEXITCODE -ne 0) { throw 'Public helper build failed; startup retained.' }
         foreach ($relative in $executables) {
+            $script:recoveryOperation='public_install'
             $source = Join-Path $repo ('artifacts\helpers\' + [IO.Path]::GetFileName($relative))
             $target = Join-Path $destination $relative
             Assert-Regular $source;Assert-Regular $target
@@ -193,6 +252,12 @@ try {
             if ($owned.Count) { throw 'Approved old helper still running; exit it normally. No process stopped.' }
             if ($changed) {
                 [IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
+                if($Phase -eq 'RebindStartupLocal' -and [IO.File]::Exists($target)){
+                    $programBackup=Join-Path $folder ('public-programs\'+$AttemptId+'\'+[IO.Path]::GetFileName($target))
+                    Assert-Regular $programBackup
+                    [IO.Directory]::CreateDirectory((Split-Path -Parent $programBackup))|Out-Null
+                    [IO.File]::Copy($target,$programBackup,$false)
+                }
                 $temporary=$target+'.'+[Guid]::NewGuid().ToString('N')+'.installing'
                 [IO.File]::Copy($source,$temporary,$false)
                 Move-Item -LiteralPath $temporary -Destination $target -Force
@@ -204,10 +269,17 @@ try {
         Restore-Startup $state $false
         $state.status='rolled-back'
     }
+    $script:recoveryOperation='recovery_record'
     Save-Json $statePath $state
     Save-Json $receipt ([pscustomobject]@{ok=$true;phase=$Phase;recoveryId=$RecoveryId;status=$state.status;originalFailurePreserved=$true})
 }catch{
-    Save-Json $receipt ([pscustomobject]@{ok=$false;phase=$Phase;recoveryId=$RecoveryId;error=$_.Exception.Message;originalsPreserved=$true})
+    $category='operation_failed'
+    $exception=$_.Exception
+    while($exception){
+        if($exception -is [UnauthorizedAccessException] -or $exception -is [Security.SecurityException]){$category='access_denied';break}
+        $exception=$exception.InnerException
+    }
+    Save-Json $receipt ([pscustomobject]@{ok=$false;phase=$Phase;recoveryId=$RecoveryId;operation=$script:recoveryOperation;failureCategory=$category;failureLine=$_.InvocationInfo.ScriptLineNumber;error=$_.Exception.Message;localStack=$_.ScriptStackTrace;originalsPreserved=$true})
 }finally{
     $mutex.ReleaseMutex();$mutex.Dispose()
     try{

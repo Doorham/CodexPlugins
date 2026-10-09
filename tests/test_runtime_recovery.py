@@ -1,5 +1,6 @@
 """Real desktop task recovery, with synthetic files, startup, and processes."""
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -121,6 +122,9 @@ function New-Object { param($ComObject)
             body = body.replace("[Environment]::GetFolderPath('LocalApplicationData')", "'" + quote(local) + "'")
             body = body.replace("[Environment]::GetFolderPath('Startup')", "'" + quote(startup) + "'")
             body = body.replace("'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'", "'" + quote(run) + "'")
+            body = body.replace('function Write-RunValue([string]$Name,[string]$Original,[string]$Desired){',
+                'function Write-RunValue([string]$Name,[string]$Original,[string]$Desired){\n'
+                ' Set-ItemProperty -LiteralPath $runPath -Name $Name -Value $Desired;return\n')
             if real_registry and name == 'recover-mixed-runtime.ps1':
                 body = body.replace("function Assert-Regular", setup + "function Assert-Regular", 1)
                 observe = "try{if($Phase -in @('Finish','Rollback')){$fixtureKey='" + registry + "';" + \
@@ -137,7 +141,7 @@ function New-Object { param($ComObject)
         return subprocess.check_output([str(PS), '-NoProfile', '-Command', command], env=env,
                                       text=True, encoding='utf-8', errors='replace', timeout=15).strip()
 
-    def phase(self, repo, recovery_id, phase, expected=0, failed_backup=None, desktop_worker=False):
+    def phase(self, repo, recovery_id, phase, expected=0, failed_backup=None, desktop_worker=False, attempt_id=None):
         env = dict(os.environ)
         env.pop('PSModulePath', None)
         env.pop('CODEX_CLI_PATH', None)
@@ -148,9 +152,12 @@ function New-Object { param($ComObject)
             args += ['-DesktopWorker']
         if failed_backup:
             args += ['-FailedBackupName', failed_backup]
+        if attempt_id:
+            args += ['-AttemptId', attempt_id]
         result = subprocess.run(args, env=env, capture_output=True, timeout=65)
         self.assertEqual(result.returncode, expected, (result.stdout + result.stderr).decode(errors='replace'))
-        receipt = json.loads((repo / '.runtime/runtime-recovery' / recovery_id / ('receipt-' + phase + '.json')).read_text())
+        receipt_name = 'receipt-' + phase + ('-' + attempt_id if attempt_id else '') + '.json'
+        receipt = json.loads((repo / '.runtime/runtime-recovery' / recovery_id / receipt_name).read_text())
         # Receipt precedes the worker's finally block; wait for its exact task.
         check = "$s=New-Object -ComObject Schedule.Service;$s.Connect();$f=$s.GetFolder('\\');" + \
                 "$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;" + \
@@ -255,6 +262,36 @@ function New-Object { param($ComObject)
             self.assertEqual(active.read_bytes(),original)
             self.assertFalse((repo/'.runtime/CompanyAIHelpers').exists())
 
+    def test_local_repair_preserves_failed_receipts_and_refuses_repeat(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            recovery_id, old, startup, run, active = self.fixture(repo)
+            original, _ = self.prepare_fixture_state(repo, recovery_id, old, startup, run, active)
+            operation = repo / '.runtime/runtime-recovery' / recovery_id
+            failed = operation / 'receipt-RebindStartupInteractive.json'
+            failed.write_bytes(b'{"ok":false,"phase":"RebindStartupInteractive","error":"synthetic denial"}')
+            old_failure = failed.read_bytes()
+            (repo/'scripts/build-helpers.ps1').write_text(
+                "$r=Split-Path -Parent $PSScriptRoot;$p=Join-Path $r 'artifacts/helpers';"
+                "[IO.Directory]::CreateDirectory($p)|Out-Null;"
+                "foreach($n in @('UpdreamClipboardCleaner.exe','CodexAnswerChime.exe',"
+                "'ArctisNova5BatteryMonitor.exe','ArctisNova5StartupGate.exe')){"
+                "[IO.File]::WriteAllText((Join-Path $p $n),'SYNTHETIC-PUBLIC-PROGRAM')};$global:LASTEXITCODE=0")
+            attempt = uuid.uuid4().hex
+            self.phase(repo, recovery_id, 'RebindStartupLocal', attempt_id=attempt)
+            receipt = operation / ('receipt-RebindStartupLocal-' + attempt + '.json')
+            saved_receipt = receipt.read_bytes()
+            self.assertEqual(failed.read_bytes(), old_failure)
+            self.assertEqual(active.read_bytes(), original)
+            self.assertIn(str(repo/'.runtime/CompanyAIHelpers'), json.loads(run.read_text())['Owned'])
+            repeated = subprocess.run([str(PS), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                '-File', str(repo/'scripts/recover-mixed-runtime.ps1'), '-Phase', 'RebindStartupLocal',
+                '-RecoveryId', recovery_id, '-AttemptId', attempt, '-Confirmed', '-NoLaunch'],
+                capture_output=True, timeout=15)
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertEqual(receipt.read_bytes(), saved_receipt)
+            self.assertEqual(failed.read_bytes(), old_failure)
+
     def test_new_migration_recovery_requests_fail_before_pausing_startup(self):
         with tempfile.TemporaryDirectory() as folder:
             repo=Path(folder)
@@ -266,5 +303,87 @@ function New-Object { param($ComObject)
                 self.assertNotEqual(result.returncode,0)
             self.assertEqual(run.read_bytes(),before)
             self.assertTrue((startup/'Owned.lnk').exists())
+
+    def test_toolbox_run_writer_preserves_foreign_values_and_completed_startup(self):
+        import winreg
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('startup_writer', ROOT/'scripts/restore-startup-run.py')
+        writer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(writer)
+        # Only our UUID scratch key is created, observed and removed.
+        sub = 'Software\\CompanyAIHelpers.Tests.' + uuid.uuid4().hex
+        desired = '"C:\\Synthetic Folder\\Chime.exe" --fixture "quoted"'
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, sub, 0, winreg.KEY_ALL_ACCESS | winreg.KEY_WOW64_64KEY) as key:
+            try:
+                winreg.SetValueEx(key, 'Foreign', 0, winreg.REG_SZ, 'preserve')
+                self.assertTrue(writer.restore_value(sub, 'Owned', 'old', desired))
+                self.assertEqual(winreg.QueryValueEx(key, 'Owned'), (desired, winreg.REG_SZ))
+                with patch.object(writer.winreg, 'SetValueEx', side_effect=PermissionError('synthetic write denial')):
+                    self.assertFalse(writer.restore_value(sub, 'Owned', 'old', desired))
+                for replacement in ('someone-else', ''):
+                    winreg.SetValueEx(key, 'Owned', 0, winreg.REG_SZ, replacement)
+                    with self.assertRaises(ValueError):
+                        writer.restore_value(sub, 'Owned', 'old', desired)
+                    self.assertEqual(winreg.QueryValueEx(key, 'Owned')[0], replacement)
+                self.assertEqual(winreg.QueryValueEx(key, 'Foreign')[0], 'preserve')
+            finally:
+                winreg.DeleteKeyEx(winreg.HKEY_CURRENT_USER, sub, winreg.KEY_WOW64_64KEY)
+
+    def test_desktop_recovery_uses_real_python_writer_for_each_prepared_entry(self):
+        # The whole Shell -> PowerShell -> Python -> winreg chain is real.
+        # Only paths, program bytes, shortcuts and the UUID registry key are fixtures.
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            recovery_id, old, startup, run, active = self.fixture(repo)
+            original, _ = self.prepare_fixture_state(repo, recovery_id, old, startup, run, active)
+            operation = repo / '.runtime/runtime-recovery' / recovery_id
+            state_path = operation / 'state.json'
+            state = json.loads(state_path.read_text())
+            second = old / 'UpdreamClipboardCleaner/UpdreamClipboardCleaner.exe'
+            second.parent.mkdir(); second.write_bytes(b'SYNTHETIC-OLD')
+            state['runEntries'].append({'name':'Owned2','command':'"'+str(second)+'" --fixture'})
+            state_path.write_text(json.dumps(state))
+            script = repo / 'scripts/recover-mixed-runtime.ps1'
+            body = script.read_text(encoding='utf-8-sig')
+            body = body.replace(' Set-ItemProperty -LiteralPath $runPath -Name $Name -Value $Desired;return\n', '', 1)
+            quote = lambda value: str(value).replace("'", "''")
+            import sys
+            body = body.replace("$python=Join-Path $repo '.runtime\\venv\\Scripts\\python.exe'", "$python='"+quote(sys.executable)+"'")
+            subkey = 'Software\\CompanyAIHelpers.Tests.' + uuid.uuid4().hex
+            registry = 'HKCU:\\' + subkey
+            body = body.replace("$runPath='"+quote(run)+"'", "$runPath='"+registry+"'")
+            setup = "if($DesktopWorker){New-Item -Path '"+registry+"' -Force|Out-Null;" + \
+                "New-ItemProperty -LiteralPath '"+registry+"' -Name Foreign -Value preserve -PropertyType String|Out-Null}\n"
+            body = body.replace('function Assert-Regular', setup+'function Assert-Regular', 1)
+            proof = repo / 'registry-proof.json'
+            done = repo / 'writer-done.txt'
+            observe = "try{$fixture=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('"+subkey+"');" + \
+                "try{$values=[ordered]@{};foreach($n in @('Owned','Owned2','Foreign')){$values[$n]=$fixture.GetValue($n,$null)};" + \
+                "[IO.File]::WriteAllText('"+quote(proof)+"',($values|ConvertTo-Json -Compress))}finally{$fixture.Dispose()}}" + \
+                "finally{Remove-Item -LiteralPath '"+registry+"' -Force;[IO.File]::WriteAllText('"+quote(done)+"','done')}\n"
+            body = body.replace('$mutex.ReleaseMutex();', observe+'$mutex.ReleaseMutex();', 1)
+            script.write_text(body, encoding='utf-8-sig')
+            writer = (ROOT/'scripts/restore-startup-run.py').read_text()
+            writer = writer.replace("RUN_KEY = r'Software\\Microsoft\\Windows\\CurrentVersion\\Run'", "RUN_KEY = "+repr(subkey))
+            writer = writer.replace("legacy_root = desktop_local_appdata() / 'CompanyAIHelpers'", "legacy_root = Path("+repr(str(old))+")")
+            (repo/'scripts/restore-startup-run.py').write_text(writer)
+            core = repo/'apps/plugin-station/core'; core.mkdir(parents=True)
+            (core/'tool_paths.py').write_bytes((ROOT/'apps/plugin-station/core/tool_paths.py').read_bytes())
+            (repo/'scripts/build-helpers.ps1').write_text(
+                "$r=Split-Path -Parent $PSScriptRoot;$p=Join-Path $r 'artifacts/helpers';"
+                "[IO.Directory]::CreateDirectory($p)|Out-Null;"
+                "foreach($n in @('UpdreamClipboardCleaner.exe','CodexAnswerChime.exe',"
+                "'ArctisNova5BatteryMonitor.exe','ArctisNova5StartupGate.exe')){"
+                "[IO.File]::WriteAllText((Join-Path $p $n),'SYNTHETIC-PUBLIC-PROGRAM')};$global:LASTEXITCODE=0")
+            self.phase(repo, recovery_id, 'RebindStartupLocal', attempt_id=uuid.uuid4().hex)
+            deadline = time.monotonic()+10
+            while not done.exists() and time.monotonic()<deadline: time.sleep(0.1)
+            self.assertTrue(done.exists(), 'Desktop registry fixture cleanup did not finish')
+            restored = json.loads(proof.read_text())
+            self.assertIn(str(repo/'.runtime/CompanyAIHelpers/CodexAnswerChime/CodexAnswerChime.exe'), restored['Owned'])
+            self.assertIn(str(repo/'.runtime/CompanyAIHelpers/UpdreamClipboardCleaner/UpdreamClipboardCleaner.exe'), restored['Owned2'])
+            self.assertEqual(restored['Foreign'], 'preserve')
+            self.assertEqual(active.read_bytes(), original)
+            self.assertEqual((old/'CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
 
 if __name__ == '__main__': unittest.main()

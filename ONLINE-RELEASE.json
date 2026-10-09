@@ -1,13 +1,14 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.20.14",
+  "version": "0.20.15",
   "license": "Apache-2.0",
   "developers": [
     "Doorham",
     "XY",
     "Althy",
-    "DRHW"
+    "DRHW",
+    "Codex"
   ],
   "update": {
     "remote": "origin",
