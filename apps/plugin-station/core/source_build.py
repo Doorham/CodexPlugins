@@ -44,3 +44,32 @@ def build_voice_bridge(repo_root: Path, output: Path) -> None:
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+# Program-only provenance. A stale local artifact must never reopen flat account state.
+def ensure_helper_artifact_current(repo: Path, plugin_id: str, artifact: Path) -> None:
+    import hashlib, json
+    from .atomic_files import atomic_json
+    kinds = {
+        'updream-bridge': ('updream-bridge', 'build-updream-bridge.ps1'),
+        'codex-answer-chime': ('codex-answer-chime', 'build-helpers.ps1'),
+        'software-environment-checker': ('environment-detector', 'build-helpers.ps1'),
+        'codex-environment-helper': ('environment-detector', 'build-helpers.ps1'),
+        'logitech-g435-battery': ('logitech-g435-battery-monitor', 'build-helpers.ps1'),
+    }
+    if plugin_id not in kinds: return
+    component, script = kinds[plugin_id]
+    files = [repo / f'helpers/{component}/src/Program.cs', repo / 'helpers/common/RuntimePaths.cs', repo / 'scripts' / script]
+    if component != 'updream-bridge': files.append(repo / 'helpers/common/RuntimeControl.cs')
+    def digest():
+        return hashlib.sha256(b''.join(path.read_bytes() for path in files)).hexdigest()
+    wanted = digest()
+    record_file = artifact.with_name(artifact.name + '.public-source.json')
+    try: record = json.loads(record_file.read_text(encoding='utf-8'))
+    except (OSError, ValueError): record = {}
+    if artifact.is_file() and record.get('source') == wanted and record.get('program') == hashlib.sha256(artifact.read_bytes()).hexdigest(): return
+    result = subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(repo/'scripts'/script)],
+        cwd=repo, capture_output=True, timeout=240, creationflags=0x08000000)
+    if result.returncode or not artifact.is_file(): raise RuntimeError('当前程序源码尚未构建成功；保留原程序，未打开旧版个人状态')
+    if digest() != wanted: raise RuntimeError('构建期间公共源码变化，请重试')
+    atomic_json(record_file, {'source':wanted,'program':hashlib.sha256(artifact.read_bytes()).hexdigest()})

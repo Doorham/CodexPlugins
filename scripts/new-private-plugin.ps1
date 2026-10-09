@@ -9,12 +9,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$userDataRoot = & (Join-Path $PSScriptRoot 'initialize-user-data.ps1')
 $normalizedId = $PluginId.Trim().ToLowerInvariant()
 if (-not $normalizedId.StartsWith('private-')) { $normalizedId = "private-$normalizedId" }
 if ($normalizedId -notmatch '^private-[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'PluginId must use lowercase letters, digits and hyphens.' }
 if ([string]::IsNullOrWhiteSpace($Name) -or [string]::IsNullOrWhiteSpace($Developer)) { throw 'Name and Developer are required.' }
 
-$privateRoot = Join-Path (Split-Path -Parent $PSScriptRoot) '.runtime\CompanyAIHelpers\CodexTools\PrivatePlugins'
+$privateRoot = Join-Path (Split-Path -Parent $PSScriptRoot) ('.runtime\CompanyAIHelpers\Users\' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value + '\CodexTools\PrivatePlugins')
 $pluginRoot = Join-Path $privateRoot $normalizedId
 $manifestPath = Join-Path $pluginRoot 'plugin.json'
 if (Test-Path -LiteralPath $pluginRoot) { throw "Private plugin already exists: $pluginRoot" }
@@ -29,14 +30,15 @@ $manifest = [ordered]@{
     name = $Name.Trim()
     moduleVersion = '1.0.0'
     developers = @($Developer.Trim())
-    description = '仅保存在当前电脑的私人插件。'
-    category = '私人'
+    description = '默认仅保存在当前电脑的私人插件。'
+    tags = @()
     icon = '◇'
     accent = '#8b5cf6'
     mode = 'background'
     handler = 'process_app'
-    executable = "%CODEXTOOLS_DATA_ROOT%\$toolName\$executableName"
+    executable = "%CODEXTOOLS_USER_DATA_ROOT%\CodexTools\PrivatePlugins\$normalizedId\$executableName"
     processName = $executableName
+    shareFiles = @($executableName)
     startup = [ordered]@{ type = 'run'; name = $Name.Trim() }
     actions = @('toggle_enabled')
     uiActions = @([ordered]@{ id = 'toggle_enabled'; label = '切换状态'; kind = 'toggle' })
@@ -54,7 +56,7 @@ $manifest = [ordered]@{
     Version = '1.0.0'
     Developers = @($Developer.Trim())
     Manifest = $manifestPath
-    Sync = $false
-    Upload = $false
+    ShareEnabled = $false
+    PublisherId = '首次共享提交时确认开发者署名'
     PromotionRequired = $true
 }

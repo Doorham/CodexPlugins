@@ -11,4 +11,5 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3800.47" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../../common/RuntimePaths.cs" Link="RuntimePaths.cs" /></ItemGroup>
 </Project>

@@ -767,17 +767,7 @@ public sealed class NasRemoteConnect : Form
     }
     static string ResolveStateRoot()
     {
-        for (var directory = new DirectoryInfo(Root); directory != null; directory = directory.Parent) {
-            if (directory.Name == "CompanyAIHelpers" && directory.Parent != null && directory.Parent.Name == ".runtime")
-                return Path.Combine(directory.FullName, "CodexTools", "CompanyAccess");
-        }
-        string configured = Environment.GetEnvironmentVariable("CODEXTOOLS_DATA_ROOT");
-        if (!string.IsNullOrEmpty(configured)) {
-            var directory = new DirectoryInfo(configured);
-            if (directory.Name == "CompanyAIHelpers" && directory.Parent != null && directory.Parent.Name == ".runtime")
-                return Path.Combine(directory.FullName, "CodexTools", "CompanyAccess");
-        }
-        return Path.Combine(Root, "state"); // Uninstalled builds do not fall back into AppData.
+        return RuntimePaths.ForTool(Path.Combine("CodexTools", "CompanyAccess"));
     }
     static string SavedRestoreArguments(string[] args)
     {

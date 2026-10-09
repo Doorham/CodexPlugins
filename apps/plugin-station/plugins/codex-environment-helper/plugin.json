@@ -1,7 +1,7 @@
 {
   "id": "codex-environment-helper",
   "name": "Codex 环境补全",
-  "moduleVersion": "1.2.1",
+  "moduleVersion": "1.2.2",
   "developers": [
     "Althy",
     "DRHW"
@@ -44,11 +44,12 @@
   "localDataPolicy": {
     "scope": "local-private",
     "paths": [
-      "%CODEXTOOLS_DATA_ROOT%\\EnvironmentDetector"
+      "%CODEXTOOLS_USER_DATA_ROOT%\\EnvironmentDetector"
     ],
     "sync": false,
     "upload": false,
     "preserveOnUpdate": true,
     "containsCredentials": false
-  }
+  },
+  "updateInstallSource": true
 }

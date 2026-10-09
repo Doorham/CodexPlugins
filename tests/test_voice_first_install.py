@@ -34,7 +34,7 @@ class VoiceFirstInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="voice source only ") as directory:
             root = Path(directory)
             service, plugin = self.prepare(root)
-            exe = root / "installed/WeTypeAweSunBridge.exe"
+            exe = root / ".runtime/CompanyAIHelpers/Fixture/WeTypeAweSunBridge.exe"
             built = root / plugin["installSource"]
             self.assertFalse(exe.exists())
             self.assertFalse(built.exists())
@@ -50,7 +50,7 @@ class VoiceFirstInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="first enable ") as directory:
             root = Path(directory)
             service, plugin = self.prepare(root)
-            exe = root / "installed/WeTypeAweSunBridge.exe"
+            exe = root / ".runtime/CompanyAIHelpers/Fixture/WeTypeAweSunBridge.exe"
             launched = []
             startup = []
             service._plugin_pids = lambda unused: [4242] if launched else []
@@ -77,7 +77,7 @@ class VoiceFirstInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             service, plugin = self.prepare(root)
-            exe = root / "installed/WeTypeAweSunBridge.exe"
+            exe = root / ".runtime/CompanyAIHelpers/Fixture/WeTypeAweSunBridge.exe"
             service._plugin_pids = lambda unused: []
             service._startup_enabled = lambda *args: False
             service._set_startup = mock.Mock()
@@ -96,7 +96,7 @@ class VoiceFirstInstallTests(unittest.TestCase):
             plugin["id"] = "unreviewed-module"
             with mock.patch("core.control.build_voice_bridge") as builder:
                 with self.assertRaises(FileNotFoundError):
-                    service._ensure_installed(plugin, root / "installed/WeTypeAweSunBridge.exe")
+                    service._ensure_installed(plugin, root / ".runtime/CompanyAIHelpers/Fixture/WeTypeAweSunBridge.exe")
                 builder.assert_not_called()
 
     def test_output_path_escape_is_rejected(self):

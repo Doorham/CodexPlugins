@@ -1,7 +1,7 @@
 {
   "id": "arctis-nova-5-battery",
   "name": "Arctis Nova 5 电量监控",
-  "moduleVersion": "1.0.3",
+  "moduleVersion": "1.0.4",
   "developers": [
     "Doorham",
     "DRHW"

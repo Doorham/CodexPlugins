@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .config_transaction import config_lock, replace_config
+
 import ctypes
 import os
 import re
@@ -11,7 +13,6 @@ import uuid
 import winreg
 from ctypes import wintypes
 from pathlib import Path
-from .tool_paths import TOOL_DATA_ROOT
 from typing import Any
 
 
@@ -82,6 +83,7 @@ def mapping_matches(drive: dict[str, Any], actual: str | None) -> bool:
 
 
 def mapping_route(drive: dict[str, Any], actual: str | None) -> str | None:
+    """Classify only explicitly configured addresses, never inferred network state."""
     if not actual:
         return None
     normalized = actual.rstrip("\\").casefold()
@@ -258,13 +260,19 @@ def config_status(plugin: dict[str, Any], config: Path | None = None) -> dict[st
     }
 
 
-def ensure_full_access_default(
+def ensure_full_access_default(plugin: dict[str, Any], *, config: Path | None = None, backup_root: Path | None = None) -> dict[str, Any]:
+    path = (config or codex_config_path()).resolve()
+    with config_lock(path):
+        return _ensure_full_access_default(plugin, config=path, backup_root=backup_root)
+
+
+def _ensure_full_access_default(
     plugin: dict[str, Any],
     *,
     config: Path | None = None,
     backup_root: Path | None = None,
 ) -> dict[str, Any]:
-    expected_drives(plugin)
+    # Codex defaults are independent of drive discovery and company activation.
     path = config or codex_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -299,7 +307,8 @@ def ensure_full_access_default(
 
     backup = None
     if path.exists():
-        destination_root = backup_root or TOOL_DATA_ROOT / "CodexNetworkDriveAccess" / "Backups"
+        from .tool_paths import USER_DATA_ROOT
+        destination_root = backup_root or USER_DATA_ROOT / "CodexNetworkDriveAccess" / "Backups"
         destination_root.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backup = destination_root / f"config-pre-full-access-{stamp}.toml"
@@ -309,9 +318,7 @@ def ensure_full_access_default(
             counter += 1
         shutil.copy2(path, backup)
 
-    temporary = path.with_name(f"{path.name}.codextools-updating")
-    temporary.write_text(updated, encoding="utf-8", newline="\n")
-    temporary.replace(path)
+    replace_config(path, original, updated)
     return {
         "changed": True,
         "backup": str(backup) if backup else None,

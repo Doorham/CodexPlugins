@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -48,15 +48,20 @@ internal sealed class VoiceBridge : ApplicationContext {
     bool identityMatch;
     DateTime nextIdentityCheck;
 
+    static string OwnIdentity() {
+        string identity=System.Security.Principal.WindowsIdentity.GetCurrent().User.Value+"|"+Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).ToLowerInvariant();
+        using(var hash=System.Security.Cryptography.SHA256.Create())
+            return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(identity))).Replace("-", "");
+    }
     [STAThread] static int Main(string[] args) {
-        string stopName="Local\\WeTypeAweSunBridge_Stop_"+Environment.UserName;
+        string stopName="Local\\WeTypeAweSunBridge_Stop_"+OwnIdentity();
         if(args.Length==1&&args[0]=="--stop") {
             try { using(var signal=EventWaitHandle.OpenExisting(stopName))signal.Set();return 0; }
             catch(WaitHandleCannotBeOpenedException){return 1;}
         }
         if(args.Length!=0)return 3;
         bool created;
-        using(var singleton=new Mutex(true,"Local\\WeTypeAweSunBridge_Single_"+Environment.UserName,out created)) {
+        using(var singleton=new Mutex(true,"Local\\WeTypeAweSunBridge_Single_"+OwnIdentity(),out created)) {
             if(!created)return 2;
             using(var signal=new EventWaitHandle(false,EventResetMode.AutoReset,stopName))
                 Application.Run(new VoiceBridge(signal));

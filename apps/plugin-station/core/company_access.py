@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import uuid
 from pathlib import Path
-from .tool_paths import TOOL_DATA_ROOT
+from .tool_paths import USER_DATA_ROOT
 
 COMPANY_ID = "wanling-media"
 MODULE_IDS = ["company-nas-remote-connect", "company-network-drive-access"]
@@ -74,17 +74,17 @@ def build_connector(folder):
                     "/out:" + str(folder / "NasRemoteConnect.exe"),
                     *["/reference:" + name + ".dll" for name in
                       ("System", "System.Core", "System.Security", "System.Windows.Forms", "System.Drawing", "System.Web.Extensions")],
-                    str(source)], check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                    str(source), str(repo / "helpers/common/RuntimePaths.cs")], check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
 
 def connector_source_hash():
     source = Path(__file__).resolve().parents[3] / "helpers" / "nas-remote-connect" / "src" / "Program.cs"
-    return hashlib.sha256(source.read_bytes()).hexdigest()
+    return hashlib.sha256(source.read_bytes() + (source.parents[2] / "common/RuntimePaths.cs").read_bytes()).hexdigest()
 
 
 class CompanyAccess:
     def __init__(self, root=None):
-        self.root = Path(root) if root else TOOL_DATA_ROOT / "CodexTools" / "CompanyAccess"
+        self.root = Path(root) if root else USER_DATA_ROOT / "CodexTools" / "CompanyAccess"
         self.record_file = self.root / "activation.dpapi"
 
     def record(self):
@@ -124,8 +124,33 @@ class CompanyAccess:
         record = self.record()
         if not record or record.get("sourceSha256") == connector_source_hash():
             return False
-        config_path = self.root / "payloads" / record["payloadId"] / "nas-drives.json"
-        self._install_config(json.loads(config_path.read_text(encoding="utf-8-sig")))
+        folder = self.root / "payloads" / record["payloadId"]
+        executable = folder / "NasRemoteConnect.exe"
+        from .control import process_pids
+        if process_pids("NasRemoteConnect.exe", executable):
+            raise ValueError("连接程序尚未正常退出；原程序、个人状态和自启保留，请退出后再打开")
+        staging = self.root / ("program-build-" + uuid.uuid4().hex)
+        staging.mkdir(parents=True)
+        try:
+            source_hash = connector_source_hash()
+            build_connector(staging)
+            if connector_source_hash() != source_hash: raise ValueError("构建期间公共源码变化")
+            code = staging / "NasRemoteConnect.exe"
+            record["files"]["NasRemoteConnect.exe"] = hashlib.sha256(code.read_bytes()).hexdigest()
+            record["sourceSha256"] = source_hash
+            # Stable payload/executable path keeps existing startup references valid.
+            backup = staging / "previous.exe"
+            shutil.copy2(executable, backup)
+            os.replace(code, executable)
+            try:
+                temporary = self.record_file.with_suffix('.updating')
+                temporary.write_bytes(protect(json.dumps(record).encode()))
+                os.replace(temporary, self.record_file)
+            except Exception:
+                os.replace(backup, executable)
+                raise
+        finally:
+            shutil.rmtree(staging)
         return True
 
     def confirm_lan_mappings(self, mappings, *, confirmed=False):

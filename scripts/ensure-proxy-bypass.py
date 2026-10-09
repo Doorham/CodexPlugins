@@ -13,7 +13,7 @@ sys.path.insert(0, str(APP_ROOT))
 
 from core.clash_verge_bypass import required_bypass_entries, sync_clash_verge_bypass  # noqa: E402
 from core.wininet_proxy import apply_proxy_bypass  # noqa: E402
-from core.tool_paths import TOOL_DATA_ROOT
+from core.tool_paths import USER_DATA_ROOT, ensure_user_data_root
 
 
 INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -30,12 +30,13 @@ def _custom_domains(record_folder: Path) -> list[str]:
 
 
 def main() -> int:
+    ensure_user_data_root()
     manifest = APP_ROOT / "plugins" / "proxy-bypass" / "plugin.json"
     if not manifest.is_file():
         print(json.dumps({"ok": False, "message": "直连白名单插件清单不存在"}, ensure_ascii=True))
-        return 0
+        return 1
     plugin = json.loads(manifest.read_text(encoding="utf-8"))
-    record_folder = TOOL_DATA_ROOT / "ProxyOverrideBypass"
+    record_folder = USER_DATA_ROOT / "ProxyOverrideBypass"
     required = required_bypass_entries([*plugin.get("domains", []), *_custom_domains(record_folder)])
 
     with winreg.CreateKeyEx(

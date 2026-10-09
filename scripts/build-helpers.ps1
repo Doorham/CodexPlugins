@@ -2,7 +2,9 @@
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $output = Join-Path $repoRoot 'artifacts\helpers'
-$csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+$csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+$runtimePathsSource = Join-Path $repoRoot 'helpers\common\RuntimePaths.cs'
+$runtimeControlSource = Join-Path $repoRoot 'helpers\common\RuntimeControl.cs'
 if (-not (Test-Path -LiteralPath $csc)) { throw "C# compiler not found: $csc" }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 
@@ -26,25 +28,25 @@ $environmentMoonResources = @(
 )
 $testSource = Join-Path $repoRoot 'tests\clipboard-verification\Program.cs'
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\UpdreamClipboardCleaner.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll $clipboardSource
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\UpdreamClipboardCleaner.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll $clipboardSource $runtimeControlSource
 if ($LASTEXITCODE -ne 0) { throw 'Updream Clipboard Cleaner build failed.' }
 
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\WeTypeAweSunBridge.exe" "/win32icon:$voiceBridgeIcon" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $voiceBridgeSource
 if ($LASTEXITCODE -ne 0) { throw 'WeType AweSun Bridge build failed.' }
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\CodexAnswerChime.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll $chimeSource
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\CodexAnswerChime.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll $chimeSource $runtimePathsSource $runtimeControlSource
 if ($LASTEXITCODE -ne 0) { throw 'Codex Answer Chime build failed.' }
 
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\ArctisNova5StartupGate.exe" /reference:System.dll /reference:System.Core.dll $arctisGateSource
 if ($LASTEXITCODE -ne 0) { throw 'Arctis Nova 5 startup gate build failed.' }
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\ArctisNova5BatteryMonitor.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $arctisMonitorSource
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\ArctisNova5BatteryMonitor.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $arctisMonitorSource $runtimeControlSource
 if ($LASTEXITCODE -ne 0) { throw 'Arctis Nova 5 battery monitor build failed.' }
 
 & $csc /nologo /optimize+ /target:exe /platform:anycpu "/out:$output\ClipboardVerification.exe" /reference:System.dll /reference:System.Core.dll $testSource
 if ($LASTEXITCODE -ne 0) { throw 'Clipboard verification build failed.' }
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\EnvironmentDetector.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll $environmentMoonResources $environmentDetectorSource
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu "/out:$output\EnvironmentDetector.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll $environmentMoonResources $environmentDetectorSource $runtimePathsSource
 if ($LASTEXITCODE -ne 0) { throw 'Environment Detector build failed.' }
 
 Get-ChildItem -LiteralPath $output -Filter '*.exe' | Select-Object FullName, Length, LastWriteTime

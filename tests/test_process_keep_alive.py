@@ -119,8 +119,8 @@ class ProcessKeepAliveTests(unittest.TestCase):
 
         self.assertTrue(manifests["codex-answer-chime"]["keepAlive"])
         self.assertTrue(manifests["updream-clipboard-cleaner"]["keepAlive"])
-        self.assertEqual(manifests["codex-answer-chime"]["moduleVersion"], "1.1.1")
-        self.assertEqual(manifests["updream-clipboard-cleaner"]["moduleVersion"], "1.0.5")
+        self.assertEqual(manifests["codex-answer-chime"]["moduleVersion"], "1.1.2")
+        self.assertEqual(manifests["updream-clipboard-cleaner"]["moduleVersion"], "1.0.6")
         self.assertFalse(manifests["software-environment-checker"].get("keepAlive", False))
         self.assertFalse(manifests["codex-environment-helper"].get("keepAlive", False))
         self.assertFalse(manifests["arctis-nova-5-battery"].get("keepAlive", False))

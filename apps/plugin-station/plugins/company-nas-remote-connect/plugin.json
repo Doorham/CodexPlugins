@@ -1,7 +1,7 @@
 {
   "id": "company-nas-remote-connect",
   "name": "公司 NAS 远程连接",
-  "moduleVersion": "1.2.11",
+  "moduleVersion": "1.2.12",
   "developers": [
     "Althy",
     "Doorham",

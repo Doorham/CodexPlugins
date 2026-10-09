@@ -6,14 +6,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from core.tool_paths import TOOL_DATA_ROOT, legacy_runtime_roots
+from core.tool_paths import USER_DATA_ROOT, ensure_user_data_root
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.20.12"
+APP_VERSION = "0.20.13"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
-INSTANCE_VERSION_MARKER = TOOL_DATA_ROOT / "CodexTools" / "plugin-station-version.txt"
+INSTANCE_VERSION_MARKER = USER_DATA_ROOT / "CodexTools" / "plugin-station-version.txt"
 ERROR_ALREADY_EXISTS = 183
 SW_RESTORE = 9
 WM_CLOSE = 0x0010
@@ -147,19 +147,7 @@ def synchronize_proxy_bypass() -> None:
 def main() -> int:
     global APP_WINDOW
 
-    if legacy_runtime_roots():
-        from core.runtime_upgrade import PendingUpgradeError, UpgradeError, request_runtime_upgrade
-        try:
-            try:
-                request_runtime_upgrade(ROOT.parents[1])
-            except PendingUpgradeError as exc:
-                if ctypes.windll.user32.MessageBoxW(None, str(exc), APP_TITLE, 0x34) != 6:
-                    return 0
-                request_runtime_upgrade(ROOT.parents[1], resume_pending=True)
-            return 0
-        except (UpgradeError, OSError) as exc:
-            ctypes.windll.user32.MessageBoxW(None, str(exc), APP_TITLE, 0x30)
-            return 1
+    ensure_user_data_root()
 
     mutex = acquire_single_instance()
     if mutex is None:
@@ -178,6 +166,7 @@ def main() -> int:
             # inspects public API attributes; exposing the native Window here
             # makes it walk WinForms/CoreWebView2 objects off the UI thread.
             self._service = ControlService(ROOT)
+            self._service.start_lifecycle_coordinator()
             self._maximized = False
 
         def get_dashboard(self):
@@ -258,7 +247,7 @@ def main() -> int:
     )
     try:
         webview.start(gui="edgechromium", debug=False, private_mode=False,
-                      storage_path=str(TOOL_DATA_ROOT / "CodexTools" / "webview2-data"))
+                      storage_path=str(USER_DATA_ROOT / "CodexTools" / "webview2-data"))
     finally:
         close_handle(mutex)
     return 0

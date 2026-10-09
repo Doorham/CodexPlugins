@@ -22,6 +22,16 @@ function Write-Result {
     exit $ExitCode
 }
 
+$transactionPath = Join-Path $repoRoot '.runtime\updates\public-install.json'
+function Save-Transaction([hashtable]$record) {
+    New-Item -ItemType Directory -Path (Split-Path -Parent $transactionPath) -Force | Out-Null
+    $temporary = "$transactionPath.$([guid]::NewGuid().ToString('N')).tmp"
+    [IO.File]::WriteAllText($temporary, ($record | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $temporary -Destination $transactionPath -Force
+}
+$transaction = $null
+if (Test-Path -LiteralPath $transactionPath) { $transaction = Get-Content -LiteralPath $transactionPath -Raw | ConvertFrom-Json }
+
 $script:gitExecutable = $null
 
 function Resolve-GitExecutable {
@@ -89,7 +99,7 @@ function Get-ReleaseFromRef {
 function Install-BuiltHelper {
     param([string]$FileName, [string]$TargetFolder, [string]$ProcessName, [string]$Commit)
     $source = Join-Path $repoRoot "artifacts\helpers\$FileName"
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { return $false }
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Required program artifact absent: $FileName" }
     $folder = Join-Path $repoRoot ".runtime\CompanyAIHelpers\$TargetFolder"
     $target = Join-Path $folder $FileName
     $same = (Test-Path -LiteralPath $target -PathType Leaf) -and
@@ -101,8 +111,7 @@ function Install-BuiltHelper {
             $_.Path -and [string]::Equals($_.Path, $target, [StringComparison]::OrdinalIgnoreCase)
         })
     }
-    foreach ($process in $running) { Stop-Process -Id $process.Id -Force }
-    if ($running.Count) { Start-Sleep -Milliseconds 300 }
+    if ($running.Count) { throw "Helper $ProcessName is running; exit normally and retry. Existing program retained." }
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
     if (Test-Path -LiteralPath $target -PathType Leaf) {
         $backupFolder = Join-Path $folder 'Backups'
@@ -113,11 +122,14 @@ function Install-BuiltHelper {
     $temporary = "$target.updating"
     Copy-Item -LiteralPath $source -Destination $temporary -Force
     Move-Item -LiteralPath $temporary -Destination $target -Force
-    if ($running.Count) { Start-Process -FilePath $target -WorkingDirectory $folder -WindowStyle Hidden }
     return $true
 }
 
 try {
+    $identityBytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($repoRoot).ToLowerInvariant())
+    $identity = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($identityBytes)).Replace('-','')
+    $updateMutex = [Threading.Mutex]::new($false, ('Local\CodexTools.PublicUpdate.' + $identity))
+    if(-not $updateMutex.WaitOne(0)){Write-Result @{ok=$false;status='busy';updated=$false;message='另一项更新正在进行。'} 8}
     $script:gitExecutable = Resolve-GitExecutable
     $head = (@(Invoke-Git @('rev-parse', 'HEAD')))[0].Trim()
     $branchName = (@(Invoke-Git @('branch', '--show-current')))[0].Trim()
@@ -134,7 +146,7 @@ try {
     $remoteHead = (@(Invoke-Git @('rev-parse', 'FETCH_HEAD')))[0].Trim()
     $release = Get-ReleaseFromRef 'FETCH_HEAD'
 
-    if ($head -eq $remoteHead) {
+    if ($head -eq $remoteHead -and $transaction -and $transaction.target -eq $head -and $transaction.complete) {
         Write-Result @{
             ok = $true; status = 'current'; updated = $false; source = 'GitHub'
             version = [string]$release.version; headCommit = $head
@@ -164,7 +176,10 @@ try {
         Write-Result @{ ok = $false; status = 'development_branch'; updated = $false; message = "当前位于 $branchName 分支，已停止自动更新。" } 5
     }
 
-    $changedFiles = @(Invoke-Git @('diff', '--name-only', "$head..$remoteHead"))
+    $from = if ($transaction -and -not $transaction.complete) { [string]$transaction.from } else { $head }
+    $changedFiles = @(Invoke-Git @('diff', '--name-only', "$from..$remoteHead"))
+    $initialVerification = $from -eq $remoteHead
+    Save-Transaction @{ target=$remoteHead; from=$from; complete=$false; stage='source' }
     Invoke-Git @('merge', '--ff-only', $remoteHead) | Out-Null
 
     if ($changedFiles -contains 'apps/plugin-station/requirements.txt') {
@@ -174,6 +189,7 @@ try {
     $helperChanged = @($changedFiles | Where-Object {
         ($_.StartsWith('helpers/') -and $_ -notlike 'helpers/updream-bridge/*') -or $_ -eq 'scripts/build-helpers.ps1'
     }).Count -gt 0
+    $helperChanged = $helperChanged -or $initialVerification
     if ($helperChanged) {
         & (Join-Path $repoRoot 'scripts\build-helpers.ps1') | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Helper build failed.' }
@@ -192,8 +208,8 @@ try {
         $_ -like 'apps/plugin-station/plugins/updream-bridge/*' -or
         $_ -eq 'scripts/build-updream-bridge.ps1'
     }).Count -gt 0
-    if ($updreamChanged) {
-        & (Join-Path $repoRoot 'scripts\build-updream-bridge.ps1') -AllowMissingSdk | Out-Null
+    if ($updreamChanged -or $initialVerification) {
+        & (Join-Path $repoRoot 'scripts\build-updream-bridge.ps1') | Out-Null
     }
 
     $codexSystemProxyResult = $null
@@ -208,6 +224,7 @@ try {
             $lines = @(& $venvPython (Join-Path $repoRoot 'scripts\ensure-codex-system-proxy.py'))
             if ($LASTEXITCODE -ne 0) { throw 'Codex system proxy synchronization failed.' }
             if ($lines.Count) { $codexSystemProxyResult = $lines[-1] | ConvertFrom-Json }
+            if (-not $codexSystemProxyResult -or -not $codexSystemProxyResult.ok) { throw 'System proxy configuration failed.' }
         }
     }
 
@@ -223,9 +240,11 @@ try {
             $lines = @(& $venvPython (Join-Path $repoRoot 'scripts\ensure-proxy-bypass.py'))
             if ($LASTEXITCODE -ne 0) { throw 'Proxy bypass synchronization failed.' }
             if ($lines.Count) { $proxyBypassResult = $lines[-1] | ConvertFrom-Json }
+            if (-not $proxyBypassResult -or -not $proxyBypassResult.ok) { throw 'Proxy bypass configuration failed.' }
         }
     }
 
+    Save-Transaction @{target=$remoteHead;from=$from;complete=$true;stage='installed'}
     Write-Result @{
         ok = $true; status = 'updated'; updated = $true; restartRequired = $true; source = 'GitHub'
         version = [string]$release.version; headCommit = $remoteHead; helpersUpdated = $helpersUpdated
@@ -238,5 +257,9 @@ catch {
     if ($message -match '(Authentication failed|could not read Username|Permission denied|Repository not found)') {
         $message = 'GitHub 访问失败。请检查公开仓库地址和网络；只有推送代码时才需要 GitHub 登录授权。'
     }
-    Write-Result @{ ok = $false; status = 'error'; updated = $false; message = "更新失败：$message" } 1
+    Write-Result @{ ok = $false; status = 'install_incomplete'; updated = $false; retryRequired = $true; message = "更新失败：$message" } 1
+}
+
+finally {
+    if ($updateMutex) { try { $updateMutex.ReleaseMutex() } catch {}; $updateMutex.Dispose() }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -1197,7 +1197,7 @@ namespace EnvironmentDetector
         {
             get
             {
-                return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
+                return Path.Combine(RuntimePaths.ForTool("EnvironmentDetector"), "Backups");
             }
         }
 
@@ -2468,7 +2468,7 @@ namespace EnvironmentDetector
         public static string Build(IEnumerable<CheckResult> results, bool codexMode)
         {
             StringBuilder report = new StringBuilder();
-            report.AppendLine(codexMode ? "Codex 环境补全 v1.2.1" : "软件安装检查 v1.2.1");
+            report.AppendLine(codexMode ? "Codex 环境补全 v1.2.2" : "软件安装检查 v1.2.2");
             report.AppendLine("检测时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             report.AppendLine(codexMode
                 ? "范围：可由本工具自行安装或配置的环境"

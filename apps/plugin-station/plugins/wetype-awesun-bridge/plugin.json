@@ -1,7 +1,7 @@
 {
   "id": "wetype-awesun-bridge",
   "name": "微信语音输入远程状态监听板",
-  "moduleVersion": "1.0.5",
+  "moduleVersion": "1.0.6",
   "developers": [
     "Althy",
     "DRHW"

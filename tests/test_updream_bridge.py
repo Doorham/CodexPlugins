@@ -19,7 +19,7 @@ from core.updream_bridge import generate_image  # noqa: E402
 class UpdreamBridgeTests(unittest.TestCase):
     def test_public_manifest_keeps_credentials_local(self) -> None:
         manifest = json.loads((ROOT / "apps/plugin-station/plugins/updream-bridge/plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["moduleVersion"], "1.1.1")
+        self.assertEqual(manifest["moduleVersion"], "1.1.2")
         self.assertTrue(manifest["updateInstallSource"])
         self.assertTrue(manifest["agentAccess"]["enabled"])
         self.assertEqual(manifest["handler"], "updream_bridge")
@@ -84,16 +84,16 @@ class UpdreamBridgeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "artifacts/helpers/UpdreamBridgeConfig.exe"
-            target = root / "installed/UpdreamBridgeConfig.exe"
+            target = root / ".runtime/CompanyAIHelpers/Fixture/UpdreamBridgeConfig.exe"
             source.parent.mkdir(parents=True)
             target.parent.mkdir(parents=True)
             source.write_bytes(b"public build")
             target.write_bytes(b"old build")
-            credentials = root / "installed/credentials.json"
+            credentials = root / ".runtime/CompanyAIHelpers/Fixture/credentials.json"
             credentials.write_text("private", encoding="utf-8")
             service = object.__new__(ControlService)
             service.repo_root = root
-            plugin = {"installSource": "artifacts/helpers/UpdreamBridgeConfig.exe", "updateInstallSource": True,
+            plugin = {"executable": str(target), "installSource": "artifacts/helpers/UpdreamBridgeConfig.exe", "updateInstallSource": True,
                       "processName": "UpdreamBridgeConfig.exe"}
             with patch("core.control.process_pids", return_value=[]):
                 service._ensure_installed(plugin, target)
@@ -106,14 +106,14 @@ class UpdreamBridgeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "artifacts/helpers/UpdreamBridgeConfig.exe"
-            target = root / "installed/UpdreamBridgeConfig.exe"
+            target = root / ".runtime/CompanyAIHelpers/Fixture/UpdreamBridgeConfig.exe"
             source.parent.mkdir(parents=True)
             target.parent.mkdir(parents=True)
             source.write_bytes(b"new build")
             target.write_bytes(b"running build")
             service = object.__new__(ControlService)
             service.repo_root = root
-            plugin = {"installSource": "artifacts/helpers/UpdreamBridgeConfig.exe", "updateInstallSource": True,
+            plugin = {"executable": str(target), "installSource": "artifacts/helpers/UpdreamBridgeConfig.exe", "updateInstallSource": True,
                       "processName": "UpdreamBridgeConfig.exe"}
             with patch("core.control.process_pids", return_value=[123]):
                 with self.assertRaisesRegex(RuntimeError, "仍在运行"):

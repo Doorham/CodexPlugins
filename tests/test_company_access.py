@@ -140,7 +140,7 @@ class CompanyAccessTests(unittest.TestCase):
             with patch.object(service, '_ensure_installed'), patch.object(service, '_start_plugin_process') as start, patch('core.control.time.sleep'):
                 self.assertEqual(service._process_action(plugin, 'start', {}), '已启动')
             build.assert_called_once()
-            self.assertNotEqual(self.access.payload_root(), old)
+            self.assertEqual(self.access.payload_root(), old)
             self.assertEqual(start.call_args.args[1], self.access.payload_root()/'NasRemoteConnect.exe')
             self.assertTrue(old.exists())
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -10,14 +10,20 @@ namespace CompanyAIHelpers.ArctisNova5BatteryMonitor
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
+            if (RuntimeControl.HandleStop(args)) return;
             bool created;
             using (var mutex = new Mutex(true, @"Local\Nova5BatteryTrayMutex", out created))
             {
                 if (!created) return;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                RuntimeControl.Initialize();
+                var stopTimer = new System.Windows.Forms.Timer();
+                stopTimer.Interval = 200;
+                stopTimer.Tick += delegate { if (RuntimeControl.StopRequested) Application.Exit(); };
+                stopTimer.Start();
                 Application.Run(new TrayContext());
             }
         }

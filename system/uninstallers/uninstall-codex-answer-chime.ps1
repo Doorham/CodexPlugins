@@ -1,9 +1,15 @@
 ﻿$ErrorActionPreference = 'Stop'
-$installDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.runtime\CompanyAIHelpers\CodexAnswerChime'
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$exe = Join-Path $repo '.runtime\CompanyAIHelpers\CodexAnswerChime\CodexAnswerChime.exe'
 $startupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Codex Answer Chime.lnk'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-Get-Process -Name 'CodexAnswerChime' -ErrorAction SilentlyContinue | Stop-Process -Force
-if (Test-Path -LiteralPath $startupLink) { Remove-Item -LiteralPath $startupLink -Force }
-Remove-ItemProperty -LiteralPath $runKey -Name 'Codex Answer Chime' -ErrorAction SilentlyContinue
-if (Test-Path -LiteralPath $installDir) { Remove-Item -LiteralPath $installDir -Recurse -Force }
-Write-Output 'Codex Answer Chime removed for the current user.'
+$running = @(Get-Process -Name 'CodexAnswerChime' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and [string]::Equals($_.Path, $exe, [StringComparison]::OrdinalIgnoreCase) -and $_.SessionId -eq (Get-Process -Id $PID).SessionId })
+if ($running.Count) { throw 'Exit this helper normally, then retry. No process was terminated.' }
+if (Test-Path -LiteralPath $startupLink) {
+    $shell = New-Object -ComObject WScript.Shell
+    if ([string]::Equals($shell.CreateShortcut($startupLink).TargetPath, $exe, [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $startupLink }
+}
+$values = Get-ItemProperty -LiteralPath $runKey -ErrorAction SilentlyContinue
+$property = $values.PSObject.Properties['Codex Answer Chime']
+if ($property -and $property.Value -eq ('"' + $exe + '"')) { Remove-ItemProperty -LiteralPath $runKey -Name 'Codex Answer Chime' }
+Write-Output 'Current user startup disabled. Shared program and personal state retained.'

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
@@ -16,16 +16,22 @@ namespace CompanyAIHelpers.UpdreamClipboardCleaner
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            if (RuntimeControl.HandleStop(args)) return;
             bool created;
             using (var mutex = new Mutex(true, @"Local\CompanyAIHelpers.UpdreamClipboardCleaner", out created))
             {
                 if (!created) return;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                using (var listener = new ClipboardListener())
-                    Application.Run();
+                RuntimeControl.Initialize();
+                using (var stopTimer = new System.Windows.Forms.Timer()) {
+                    stopTimer.Interval = 200;
+                    stopTimer.Tick += delegate { if (RuntimeControl.StopRequested) Application.Exit(); };
+                    stopTimer.Start();
+                    using (var listener = new ClipboardListener()) Application.Run();
+                }
             }
         }
     }
@@ -172,7 +178,8 @@ namespace CompanyAIHelpers.UpdreamClipboardCleaner
                 // Adobe applications are most reliable with the traditional
                 // 24-bit BI_RGB form of CF_DIB. A 32-bit BI_RGB payload leaves
                 // the fourth byte undefined; some Photoshop builds reject it
-                // instead of treating it as alpha.
+                // instead of treating it as alpha. Keep alpha in CF_DIBV5 and
+                // the original PNG, but offer a conservative 24-bit DIB first.
                 int dibStride = checked(((width * 3) + 3) & ~3);
                 int dibImageBytes = checked(dibStride * height);
                 dib = new byte[checked(40 + dibImageBytes)];

@@ -1,7 +1,7 @@
 {
   "id": "company-network-drive-access",
   "name": "公司网络盘访问",
-  "moduleVersion": "1.1.2",
+  "moduleVersion": "1.1.3",
   "developers": [
     "Althy",
     "Doorham",
@@ -13,12 +13,12 @@
   "accent": "#38bdf8",
   "mode": "system",
   "handler": "network_drive_access",
-  "recordFolder": "%CODEXTOOLS_DATA_ROOT%\\CodexNetworkDriveAccess",
+  "recordFolder": "%CODEXTOOLS_USER_DATA_ROOT%\\CodexNetworkDriveAccess",
   "localDataPolicy": {
     "scope": "local-private",
     "paths": [
       "%USERPROFILE%\\.codex\\config.toml",
-      "%CODEXTOOLS_DATA_ROOT%\\CodexNetworkDriveAccess"
+      "%CODEXTOOLS_USER_DATA_ROOT%\\CodexNetworkDriveAccess"
     ],
     "sync": false,
     "upload": false,

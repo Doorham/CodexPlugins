@@ -80,7 +80,7 @@ internal sealed class ConfigWindow : Form
         try
         {
             if (!File.Exists(htmlPath)) throw new FileNotFoundException("配置界面文件不存在");
-            var dataPath = Path.Combine(AppContext.BaseDirectory, "webview2-data");
+            var dataPath = Path.Combine(RuntimePaths.ForTool("UpdreamBridge"), "webview2-data");
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: dataPath);
             await browser.EnsureCoreWebView2Async(environment);
             ApplyZoom();
@@ -279,7 +279,7 @@ internal sealed class ConfigWindow : Form
                 access_token = access, refresh_token = refresh, project_id = project,
                 user_id = id, username, expires_at = TokenExpiry(access)
             };
-            string folder = AppContext.BaseDirectory;
+            string folder = RuntimePaths.ForTool("UpdreamBridge");
             Directory.CreateDirectory(folder);
             string target = Path.Combine(folder, "credentials.json");
             string temporary = Path.Combine(folder, "credentials-" + Guid.NewGuid().ToString("N") + ".tmp");
@@ -361,7 +361,7 @@ internal sealed class GuideWindow : Form
         try
         {
             if (!File.Exists(htmlPath)) throw new FileNotFoundException("配置指引文件不存在");
-            var dataPath = Path.Combine(AppContext.BaseDirectory, "webview2-data");
+            var dataPath = Path.Combine(RuntimePaths.ForTool("UpdreamBridge"), "webview2-data");
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: dataPath);
             await browser.EnsureCoreWebView2Async(environment);
             browser.CoreWebView2.Settings.AreDevToolsEnabled = false;

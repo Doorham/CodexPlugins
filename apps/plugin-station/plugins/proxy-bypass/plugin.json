@@ -1,7 +1,7 @@
 {
   "id": "cn-proxy-bypass",
   "name": "国内网站直连",
-  "moduleVersion": "1.2.7",
+  "moduleVersion": "1.2.8",
   "developers": [
     "Doorham",
     "Althy",
@@ -13,18 +13,7 @@
   "accent": "#f59e0b",
   "mode": "system",
   "handler": "proxy_override",
-  "recordFolder": "%CODEXTOOLS_DATA_ROOT%\\ProxyOverrideBypass",
-  "customDataPolicy": {
-    "scope": "local-private",
-    "paths": [
-      "%CODEXTOOLS_DATA_ROOT%\\ProxyOverrideBypass\\custom-domains.json",
-      "%APPDATA%\\io.github.clash-verge-rev.clash-verge-rev\\verge.yaml",
-      "%CODEXTOOLS_DATA_ROOT%\\ProxyOverrideBypass\\Backups"
-    ],
-    "sync": false,
-    "upload": false,
-    "preserveOnUpdate": true
-  },
+  "recordFolder": "%CODEXTOOLS_USER_DATA_ROOT%\\ProxyOverrideBypass",
   "domains": [
     "updream.cn",
     "updream.bilibili.com",
@@ -134,5 +123,16 @@
     "actions": [
       "refresh"
     ]
+  },
+  "localDataPolicy": {
+    "scope": "local-private",
+    "paths": [
+      "%CODEXTOOLS_USER_DATA_ROOT%\\ProxyOverrideBypass\\custom-domains.json",
+      "%APPDATA%\\io.github.clash-verge-rev.clash-verge-rev\\verge.yaml",
+      "%CODEXTOOLS_USER_DATA_ROOT%\\ProxyOverrideBypass\\Backups"
+    ],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true
   }
 }

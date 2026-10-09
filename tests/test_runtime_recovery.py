@@ -16,6 +16,14 @@ PS = Path(os.environ.get('WINDIR', r'C:\Windows')) / 'System32/WindowsPowerShell
 @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
 class RuntimeRecoveryTests(unittest.TestCase):
     def fixture(self, repo, real_registry=False):
+        # The real worker deliberately uses a standard desktop token. Grant
+        # this synthetic directory to the SID even if Python is elevated and
+        # mkdtemp inherited only an Administrators ACL.
+        quoted=str(repo).replace("'", "''")
+        self.ps_command("$p='"+quoted+"';$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User;"+
+            "$a=[IO.Directory]::GetAccessControl($p);"+
+            "$rule=[Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow');"+
+            "$a.AddAccessRule($rule);[IO.Directory]::SetAccessControl($p,$a)")
         scripts = repo / 'scripts'
         scripts.mkdir()
         local = repo / 'synthetic-local'
@@ -129,13 +137,15 @@ function New-Object { param($ComObject)
         return subprocess.check_output([str(PS), '-NoProfile', '-Command', command], env=env,
                                       text=True, encoding='utf-8', errors='replace', timeout=15).strip()
 
-    def phase(self, repo, recovery_id, phase, expected=0, failed_backup=None):
+    def phase(self, repo, recovery_id, phase, expected=0, failed_backup=None, desktop_worker=False):
         env = dict(os.environ)
         env.pop('PSModulePath', None)
         env.pop('CODEX_CLI_PATH', None)
         args = [str(PS), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
             str(repo / 'scripts/recover-mixed-runtime.ps1'), '-Phase', phase, '-RecoveryId', recovery_id,
             '-Confirmed', '-NoLaunch']
+        if desktop_worker:
+            args += ['-DesktopWorker']
         if failed_backup:
             args += ['-FailedBackupName', failed_backup]
         result = subprocess.run(args, env=env, capture_output=True, timeout=65)
@@ -154,154 +164,82 @@ function New-Object { param($ComObject)
         self.assertEqual(receipt['ok'], expected == 0, receipt)
         return receipt
 
-    def test_prepare_finish_preserves_failed_record_and_unrelated_program(self):
-        with tempfile.TemporaryDirectory() as folder:
-            repo = Path(folder)
-            recovery_id, old, startup, run, active = self.fixture(repo)
-            original = active.read_bytes()
-            foreign_link = (startup / 'Foreign.lnk').read_bytes()
-            foreign_run = json.loads(run.read_text())['Foreign']
-            self.phase(repo, recovery_id, 'Prepare')
-            self.assertEqual(active.read_bytes(), original)
-            self.assertNotIn('Owned', json.loads(run.read_text()))
-            self.assertFalse((startup / 'Owned.lnk').exists())
-            self.assertTrue((old / 'CodexAnswerChime/CodexAnswerChime.exe').exists())
-            self.phase(repo, recovery_id, 'Finish')
-            complete = json.loads(active.read_text())
-            self.assertEqual(complete['state'], 'complete')
-            self.assertEqual(complete['previousRequestId'], recovery_id)
-            self.assertNotEqual(complete['requestId'], recovery_id)
-            operation = repo / '.runtime/runtime-recovery' / recovery_id
-            self.assertEqual((operation / 'failed-active-original.json').read_bytes(), original)
-            self.assertEqual(json.loads((operation / 'state.json').read_text())['originalActiveSha256'], hashlib.sha256(original).hexdigest().upper())
-            target = repo / '.runtime/CompanyAIHelpers/CodexAnswerChime/CodexAnswerChime.exe'
-            self.assertEqual(json.loads(run.read_text())['Owned'], '"' + str(target) + '" --synthetic')
-            restored = json.loads((startup / 'Owned.lnk').read_text())
-            self.assertEqual(restored['TargetPath'], str(target))
-            self.assertEqual(restored['Arguments'], '--synthetic')
-            self.assertEqual((startup / 'Foreign.lnk').read_bytes(), foreign_link)
-            self.assertEqual(json.loads(run.read_text())['Foreign'], foreign_run)
-            for name in ('MigrationBackups', 'WeTypeAweSunDirectTrial', 'WorkBuddyDailyPoints'):
-                self.assertEqual((old / name / 'preserved.bin').read_bytes(), ('synthetic-' + name).encode())
-                self.assertFalse((repo / '.runtime/CompanyAIHelpers' / name).exists())
-            self.assertEqual((repo / '.runtime/CompanyAIHelpers/CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
+    def prepare_fixture_state(self, repo, recovery_id, old, startup, run, active):
+        operation = repo / '.runtime/runtime-recovery' / recovery_id
+        operation.mkdir(parents=True)
+        original = active.read_bytes()
+        original_run = json.loads(run.read_text())
+        link = startup / 'Owned.lnk'
+        link_bytes = link.read_bytes()
+        (operation / 'fixture.lnk').write_bytes(link_bytes)
+        state = {'schemaVersion':1,'recoveryId': recovery_id,'status':'prepared',
+            'ownerSid': self.ps_command('[Security.Principal.WindowsIdentity]::GetCurrent().User.Value'),
+            'originalActiveSha256': hashlib.sha256(original).hexdigest().upper(),
+            'runEntries':[{'name':'Owned','command':original_run['Owned']}],
+            'links':[{'path':str(link),'backup':'fixture.lnk','sha256':hashlib.sha256(link_bytes).hexdigest().upper(),
+                'target':str(old / 'CodexAnswerChime/CodexAnswerChime.exe'),
+                'arguments':'--synthetic','workingDirectory':str(old/'CodexAnswerChime'),
+                'description':'Fixture shortcut','iconLocation':str(old/'CodexAnswerChime/CodexAnswerChime.exe')+',0'}]}
+        (operation / 'state.json').write_text(json.dumps(state))
+        original_run.pop('Owned')
+        run.write_text(json.dumps(original_run))
+        link.unlink()
+        return original, link_bytes
 
-    def test_prepare_rollback_restores_exact_startup_without_changing_failure(self):
+    def test_previously_paused_startup_restores_without_migrating_private_data(self):
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder)
             recovery_id, old, startup, run, active = self.fixture(repo)
-            original = active.read_bytes()
-            original_run = json.loads(run.read_text())
-            original_link = (startup / 'Owned.lnk').read_bytes()
-            self.phase(repo, recovery_id, 'Prepare')
+            original, link_bytes = self.prepare_fixture_state(repo, recovery_id, old, startup, run, active)
             self.phase(repo, recovery_id, 'Rollback')
             self.assertEqual(active.read_bytes(), original)
-            self.assertEqual(json.loads(run.read_text()), original_run)
-            self.assertEqual((startup / 'Owned.lnk').read_bytes(), original_link)
-            self.assertTrue((old / 'CodexTools/PrivatePlugins/Fixture/settings.json').exists())
-
-    def test_changed_startup_is_not_overwritten_during_rollback(self):
-        with tempfile.TemporaryDirectory() as folder:
-            repo = Path(folder)
-            recovery_id, old, startup, run, active = self.fixture(repo)
-            original = active.read_bytes()
-            self.phase(repo, recovery_id, 'Prepare')
-            values = json.loads(run.read_text())
-            values['Owned'] = 'synthetic unrelated replacement'
-            run.write_text(json.dumps(values))
-            self.phase(repo, recovery_id, 'Rollback', expected=1)
-            self.assertEqual(json.loads(run.read_text())['Owned'], 'synthetic unrelated replacement')
-            self.assertEqual(active.read_bytes(), original)
-
-    def test_private_conflict_leaves_failure_originals_and_startup_paused(self):
-        with tempfile.TemporaryDirectory() as folder:
-            repo = Path(folder)
-            recovery_id, old, startup, run, active = self.fixture(repo)
-            original = active.read_bytes()
-            self.phase(repo, recovery_id, 'Prepare')
-            conflict = repo / '.runtime/CompanyAIHelpers/CodexTools/PrivatePlugins/Fixture/settings.json'
-            conflict.parent.mkdir(parents=True)
-            conflict.write_bytes(b'{"fixture":2}')
-            self.phase(repo, recovery_id, 'Finish', expected=1)
-            self.assertEqual(active.read_bytes(), original)
-            self.assertEqual(conflict.read_bytes(), b'{"fixture":2}')
+            self.assertEqual((startup / 'Owned.lnk').read_bytes(), link_bytes)
+            self.assertIn(str(old), json.loads(run.read_text())['Owned'])
+            self.assertFalse((repo / '.runtime/CompanyAIHelpers').exists())
             self.assertEqual((old / 'CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
-            self.assertNotIn('Owned', json.loads(run.read_text()))
-            self.assertFalse((startup / 'Owned.lnk').exists())
-            self.assertEqual(json.loads((repo / '.runtime/runtime-recovery' / recovery_id / 'state.json').read_text())['status'], 'prepared')
 
-    def test_empty_startup_value_is_a_change_not_an_absent_value(self):
+    def test_changed_startup_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder)
             recovery_id, old, startup, run, active = self.fixture(repo)
-            original = active.read_bytes()
-            self.phase(repo, recovery_id, 'Prepare')
-            values = json.loads(run.read_text())
-            values['Owned'] = ''
+            original, _ = self.prepare_fixture_state(repo, recovery_id, old, startup, run, active)
+            values = json.loads(run.read_text());values['Owned']='unrelated replacement'
             run.write_text(json.dumps(values))
             self.phase(repo, recovery_id, 'Rollback', expected=1)
-            self.assertEqual(json.loads(run.read_text())['Owned'], '')
+            self.assertEqual(json.loads(run.read_text())['Owned'],'unrelated replacement')
+            self.assertEqual(active.read_bytes(),original)
+
+    def test_rebind_installs_only_public_programs_and_restores_paused_entries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            recovery_id, old, startup, run, active = self.fixture(repo)
+            original, _ = self.prepare_fixture_state(repo, recovery_id, old, startup, run, active)
+            build = repo / 'scripts/build-helpers.ps1'
+            build.write_text("$r=Split-Path -Parent $PSScriptRoot;$p=Join-Path $r 'artifacts/helpers';" +
+                "[IO.Directory]::CreateDirectory($p)|Out-Null;" +
+                "foreach($n in @('UpdreamClipboardCleaner.exe','CodexAnswerChime.exe'," +
+                "'ArctisNova5BatteryMonitor.exe','ArctisNova5StartupGate.exe')){" +
+                "[IO.File]::WriteAllText((Join-Path $p $n),'SYNTHETIC-PUBLIC-PROGRAM')};$global:LASTEXITCODE=0")
+            self.phase(repo, recovery_id, 'RebindStartup', desktop_worker=True)
+            destination = repo / '.runtime/CompanyAIHelpers'
             self.assertEqual(active.read_bytes(), original)
+            self.assertIn(str(destination), json.loads(run.read_text())['Owned'])
+            link = json.loads((startup / 'Owned.lnk').read_text())
+            self.assertEqual(link['TargetPath'], str(destination / 'CodexAnswerChime/CodexAnswerChime.exe'))
+            self.assertTrue((startup / 'Foreign.lnk').exists())
+            self.assertFalse((destination / 'CodexTools').exists())
+            self.assertEqual((old / 'CodexTools/PrivatePlugins/Fixture/settings.json').read_bytes(), b'{"fixture":1}')
 
-    def test_real_registry_absent_nas_and_paused_run_finish_or_rollback(self):
-        for last_phase in ('Finish', 'Rollback'):
-            with self.subTest(phase=last_phase), tempfile.TemporaryDirectory() as folder:
-                repo = Path(folder)
-                recovery_id, old, startup, registry, active = self.fixture(repo, real_registry=True)
-                original = active.read_bytes()
-                self.assertRegex(registry, r'^HKCU:\\Software\\CompanyAIHelpers\.Tests\.[a-f0-9]{32}$')
-                prepared = self.phase(repo, recovery_id, 'Prepare')
-                self.assertEqual(prepared['pausedRunCount'], 1)
-                self.assertEqual((repo / 'registry-proof.txt').read_text(), 'PSArgumentException')
-                self.phase(repo, recovery_id, last_phase)
-                restored = (repo / 'registry-restored.txt').read_text()
-                helper = (repo / '.runtime/CompanyAIHelpers' if last_phase == 'Finish' else old) / 'CodexAnswerChime/CodexAnswerChime.exe'
-                self.assertEqual(restored, '"' + str(helper) + '" --synthetic')
-                if last_phase == 'Rollback':
-                    self.assertEqual(active.read_bytes(), original)
-                else:
-                    self.assertEqual(json.loads(active.read_text())['state'], 'complete')
+    def test_new_migration_recovery_requests_fail_before_pausing_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo=Path(folder)
+            recovery_id, old, startup, run, active=self.fixture(repo)
+            before=run.read_bytes()
+            for phase in ('Prepare','Finish','Resume'):
+                result=subprocess.run([str(PS),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',
+                    str(repo/'scripts/recover-mixed-runtime.ps1'),'-Phase',phase,'-RecoveryId',recovery_id,'-Confirmed'],capture_output=True,timeout=15)
+                self.assertNotEqual(result.returncode,0)
+            self.assertEqual(run.read_bytes(),before)
+            self.assertTrue((startup/'Owned.lnk').exists())
 
-    def test_reviewed_resume_preserves_old_receipt_and_rejects_copied_stage(self):
-        for copied in (False, True):
-            with self.subTest(copied=copied), tempfile.TemporaryDirectory() as folder:
-                repo = Path(folder)
-                recovery_id, old, startup, run, active = self.fixture(repo)
-                self.phase(repo, recovery_id, 'Prepare')
-                operation = repo / '.runtime/runtime-recovery' / recovery_id
-                state_path = operation / 'state.json'
-                state = json.loads(state_path.read_text())
-                old_hash = 'A' * 64
-                state['migrationSha256'] = old_hash
-                state_path.write_text(json.dumps(state))
-                script = repo / 'scripts/recover-mixed-runtime.ps1'
-                script.write_text(script.read_text(encoding='utf-8-sig').replace(
-                    'ED356E06137EF12430B773C2EC282B4AC7832AEA4375801B540BFEF437F7B7C5', old_hash), encoding='utf-8-sig')
-                receipt = operation / 'receipt-Finish.json'
-                receipt.write_text(json.dumps({'ok': False, 'phase': 'Finish', 'recoveryId': recovery_id,
-                    'error': 'Controlled migration failed: Stage. Originals and both backups retained.'}))
-                receipt_bytes = receipt.read_bytes()
-                failed_name = 'runtime-move-20000102-000000'
-                backup = repo / '.runtime/migration-backups' / failed_name
-                backup.mkdir()
-                failure = backup / 'failure.json'
-                failure.write_text(json.dumps({'phase': 'Stage', 'error': 'Property CompanyAIHelpers.NasSavedMappings does not exist'}))
-                original_failure = failure.read_bytes()
-                if copied:
-                    (backup / 'snapshots').mkdir()
-                original_active = active.read_bytes()
-                self.phase(repo, recovery_id, 'Resume', expected=1 if copied else 0, failed_backup=failed_name)
-                self.assertEqual(receipt.read_bytes(), receipt_bytes)
-                self.assertEqual(failure.read_bytes(), original_failure)
-                if copied:
-                    self.assertEqual(active.read_bytes(), original_active)
-                    self.assertEqual(json.loads(state_path.read_text())['migrationSha256'], old_hash)
-                else:
-                    result = json.loads(active.read_text())
-                    self.assertEqual(result['state'], 'complete')
-                    self.assertEqual((operation / 'failed-active-original.json').read_bytes(), original_active)
-                    self.assertEqual(json.loads(state_path.read_text())['resumeFromMissingNas']['finishReceiptSha256'], hashlib.sha256(receipt_bytes).hexdigest().upper())
-
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__ == '__main__': unittest.main()

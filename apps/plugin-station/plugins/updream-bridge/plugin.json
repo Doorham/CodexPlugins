@@ -1,7 +1,7 @@
 {
   "id": "updream-bridge",
   "name": "UpdreamBridge 图片生成",
-  "moduleVersion": "1.1.1",
+  "moduleVersion": "1.1.2",
   "developers": [
     "Doorham",
     "Althy",
@@ -75,7 +75,7 @@
     "scope": "local-private",
     "paths": [
       "%USERPROFILE%\\.updream\\credentials.json",
-      "%CODEXTOOLS_DATA_ROOT%\\UpdreamBridge\\webview2-data"
+      "%CODEXTOOLS_USER_DATA_ROOT%\\UpdreamBridge\\webview2-data"
     ],
     "sync": false,
     "upload": false,

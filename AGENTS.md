@@ -9,3 +9,5 @@
 - 工具箱安装程序、私人状态和缓存必须位于当前克隆下 `.runtime/CompanyAIHelpers`；不得放入 Codex 目录或 AppData。旧目录迁移前必须备份并核对精确所有权。
 - 私人插件只存在 `%CODEXTOOLS_DATA_ROOT%\CodexTools\PrivatePlugins`，不同步、不上传。
 - 不得让更新器追踪开发分支、强制覆盖本地改动或从非 GitHub 远程更新。
+
+- 2026-10-09 用户明确更正：个人状态与共享程序隔离。程序仍在 `.runtime/CompanyAIHelpers/<Tool>`，个人状态和私人插件在 `.runtime/CompanyAIHelpers/Users/<Windows SID>/<Tool>`；旧平铺状态不自动认领。不读取、比较、哈希或上传私人状态及其清单来解决公共版本冲突，历史整目录迁移已停用。

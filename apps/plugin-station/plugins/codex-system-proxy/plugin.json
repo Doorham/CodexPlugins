@@ -1,7 +1,7 @@
 {
   "id": "codex-system-proxy",
   "name": "Codex 对话 timeout 修复",
-  "moduleVersion": "1.1.1",
+  "moduleVersion": "1.1.2",
   "developers": [
     "Althy",
     "DRHW"
@@ -12,12 +12,12 @@
   "accent": "#22c55e",
   "mode": "system",
   "handler": "codex_system_proxy",
-  "recordFolder": "%CODEXTOOLS_DATA_ROOT%\\CodexSystemProxy",
+  "recordFolder": "%CODEXTOOLS_USER_DATA_ROOT%\\CodexSystemProxy",
   "localDataPolicy": {
     "scope": "local-private",
     "paths": [
       "%USERPROFILE%\\.codex\\config.toml",
-      "%CODEXTOOLS_DATA_ROOT%\\CodexSystemProxy"
+      "%CODEXTOOLS_USER_DATA_ROOT%\\CodexSystemProxy"
     ],
     "sync": false,
     "upload": false,

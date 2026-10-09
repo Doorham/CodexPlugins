@@ -1,7 +1,7 @@
 {
   "id": "codex-answer-chime",
   "name": "任务完成提示音",
-  "moduleVersion": "1.1.1",
+  "moduleVersion": "1.1.2",
   "developers": [
     "Doorham",
     "Althy",
@@ -60,5 +60,16 @@
       "toggle_enabled",
       "test_sound"
     ]
-  }
+  },
+  "stateFolder": "%CODEXTOOLS_USER_DATA_ROOT%\\CodexAnswerChime",
+  "localDataPolicy": {
+    "scope": "local-private",
+    "paths": [
+      "%CODEXTOOLS_USER_DATA_ROOT%\\CodexAnswerChime"
+    ],
+    "sync": false,
+    "upload": false,
+    "preserveOnUpdate": true
+  },
+  "updateInstallSource": true
 }

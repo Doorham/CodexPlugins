@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps/plugin-station"))
-from core.tool_paths import LEGACY_COMPONENTS, TOOL_DATA_ROOT, expand_tool_path, legacy_runtime_roots
+from core.tool_paths import LEGACY_COMPONENTS, TOOL_DATA_ROOT, USER_DATA_ROOT, expand_tool_path, legacy_runtime_roots
 from core.company_access import CompanyAccess
 
 
@@ -29,7 +29,7 @@ class ToolPathsTests(unittest.TestCase):
 
     def test_company_default_does_not_depend_on_launching_app(self):
         with patch.dict(os.environ, {"LOCALAPPDATA": r"C:\Packaged\LocalCache"}):
-            self.assertEqual(CompanyAccess().root, TOOL_DATA_ROOT / "CodexTools" / "CompanyAccess")
+            self.assertEqual(CompanyAccess().root, USER_DATA_ROOT / "CodexTools" / "CompanyAccess")
 
     def test_public_module_owned_paths_are_not_appdata(self):
         for manifest in (ROOT / "apps/plugin-station/plugins").glob("*/plugin.json"):
@@ -40,7 +40,7 @@ class ToolPathsTests(unittest.TestCase):
 
     def test_webview_cache_is_explicit_and_private_runtime_is_ignored(self):
         app = (ROOT / "apps/plugin-station/app.py").read_text(encoding="utf-8")
-        self.assertIn('storage_path=str(TOOL_DATA_ROOT', app)
+        self.assertIn('storage_path=str(USER_DATA_ROOT', app)
         self.assertIn('.runtime/', (ROOT / '.gitignore').read_text(encoding='utf-8'))
 
     def test_legacy_inventory_is_only_owned_roots(self):
@@ -66,20 +66,13 @@ class ToolPathsTests(unittest.TestCase):
             (old / 'CodexTools').mkdir()
             self.assertEqual(legacy_runtime_roots(local), [old])
 
-    def test_startup_and_migrator_scope_the_same_registered_components(self):
-        import re
-        migration = (ROOT / 'scripts/migrate-workspace-runtime.ps1').read_text(encoding='utf-8-sig')
-        names = set(re.findall(r"'([^']+)'", re.search(r'\$allowed = @\((.*?)\)', migration, re.S).group(1)))
-        self.assertEqual(names, set(LEGACY_COMPONENTS))
-
-    def test_startup_guards_before_creating_an_empty_private_layer(self):
+    def test_startup_never_gates_on_legacy_private_directories(self):
         app = (ROOT / 'apps/plugin-station/app.py').read_text(encoding='utf-8')
-        self.assertLess(app.index('if legacy_runtime_roots():'), app.index('mutex = acquire_single_instance()'))
+        self.assertNotIn('if legacy_runtime_roots():', app)
         migration = (ROOT / 'scripts/migrate-workspace-runtime.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn('if ($priorRestoreEnabled -and -not $NoForce)', migration)
-        self.assertIn('a.refresh_connector()', migration)
-        self.assertIn('Complete Exit', migration)
-        self.assertNotIn("Start-Process -FilePath (Join-Path $env:WINDIR 'System32\\wscript.exe')", migration)
+        self.assertNotIn('Get-FileHash', migration)
+        self.assertNotIn('Get-ChildItem', migration)
+        self.assertIn('throw', migration)
 
     def test_updater_only_stops_the_owned_installed_executable(self):
         updater = ROOT / 'scripts/update-from-hub.ps1'

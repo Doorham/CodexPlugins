@@ -35,8 +35,9 @@ from .workbuddy_chime import (
 )
 from .wininet_proxy import apply_proxy_bypass
 from .updream_bridge import generate_image as generate_updream_image
-from .source_build import build_voice_bridge
-from .tool_paths import expand_tool_path
+from .source_build import build_voice_bridge, ensure_helper_artifact_current
+from .tool_paths import TOOL_DATA_ROOT, USER_DATA_ROOT, USER_SID, current_user_sid, ensure_user_data_root, expand_tool_path
+from .runtime_policy import validate_install_targets
 from .company_access import CompanyAccess, COMPANY_ID
 from .company_drives import (config_status as network_config_status, enable_linked_connections, ensure_full_access_default, ensure_mappings, expected_drives, linked_connections_enabled, probe_drives, write_test as network_write_test)
 
@@ -96,9 +97,15 @@ def process_pids(image_name: str, executable: Path | None = None, *, snapshot: d
     kernel.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint32)]
     kernel.QueryFullProcessImageNameW.restype = ctypes.c_bool
     kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.ProcessIdToSessionId.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+    own_session = ctypes.c_uint32()
+    kernel.ProcessIdToSessionId(os.getpid(), ctypes.byref(own_session))
     expected = os.path.normcase(str(executable.resolve()))
     matching = []
     for pid in pids:
+        session = ctypes.c_uint32()
+        if not kernel.ProcessIdToSessionId(pid, ctypes.byref(session)) or session.value != own_session.value:
+            continue
         handle = kernel.OpenProcess(0x1000, False, pid)
         if not handle:
             continue
@@ -107,7 +114,10 @@ def process_pids(image_name: str, executable: Path | None = None, *, snapshot: d
             length = ctypes.c_uint32(len(buffer))
             if kernel.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(length)):
                 if os.path.normcase(buffer.value) == expected:
-                    matching.append(pid)
+                    try:
+                        if current_user_sid(handle) == USER_SID: matching.append(pid)
+                    except OSError:
+                        continue
         finally:
             kernel.CloseHandle(handle)
     return matching
@@ -119,6 +129,22 @@ def read_run_value(name: str) -> str | None:
             return str(winreg.QueryValueEx(key, name)[0])
     except FileNotFoundError:
         return None
+
+
+def command_targets(command: str, exe: Path) -> bool:
+    match = re.match(r'^\s*(?:"([^"]+)"|([^\s]+))', command)
+    if not match: return False
+    return os.path.normcase(str(Path(match.group(1) or match.group(2)).resolve())) == os.path.normcase(str(exe.resolve()))
+
+
+def shortcut_target(path: Path) -> Path | None:
+    if not path.is_file(): return None
+    quoted = str(path).replace("'", "''")
+    script = f"$w=New-Object -ComObject WScript.Shell;$w.CreateShortcut('{quoted}').TargetPath"
+    encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
+    result = hidden_run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded])
+    text = result.stdout.strip()
+    return Path(text).resolve() if result.returncode == 0 and text else None
 
 
 class ControlService:
@@ -134,7 +160,7 @@ class ControlService:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.repo_root = root.parents[1]
-        self.private_root = expand_path(r"%CODEXTOOLS_DATA_ROOT%\CodexTools\PrivatePlugins")
+        self.private_root = expand_path(r"%CODEXTOOLS_USER_DATA_ROOT%\CodexTools\PrivatePlugins")
         self.private_errors: list[str] = []
         self._lock = threading.RLock()
         self.company_access = CompanyAccess()
@@ -144,8 +170,50 @@ class ControlService:
         self._keep_alive_attempts: dict[str, list[float]] = {}
         self._keep_alive_errors: dict[str, str] = {}
         self._codex_proxy_diagnostic: dict[str, Any] | None = None
+        ensure_user_data_root()
         self._ensure_private_layer()
         self.plugins = self._load_plugins()
+        self._lifecycle_stop = threading.Event()
+        self._manual_stops = self._read_intent()
+
+    def _read_intent(self) -> set[str]:
+        try:
+            values = json.loads((self.private_root.parent / "runtime-intent.json").read_text(encoding="utf-8")).get("stopped", [])
+            if not isinstance(values, list) or any(not isinstance(item, str) for item in values):
+                raise ValueError("Invalid runtime intent")
+            return set(values)
+        except (OSError, ValueError, TypeError):
+            return set()
+
+
+    def _set_manual_stop(self, plugin: dict[str, Any], stopped: bool) -> None:
+        intents = getattr(self, "_manual_stops", set())
+        if stopped: intents.add(plugin.get("id", plugin["processName"]))
+        else: intents.discard(plugin.get("id", plugin["processName"]))
+        self._manual_stops = intents
+        if hasattr(self, "private_root"):
+            from .atomic_files import atomic_json
+            atomic_json(self.private_root.parent / "runtime-intent.json", {"stopped": sorted(intents)})
+
+
+    def start_lifecycle_coordinator(self) -> None:
+        if getattr(self, "_lifecycle_thread", None): return
+        def run():
+            while not self._lifecycle_stop.is_set():
+                with self._lock:
+                    for plugin in self.plugins.values():
+                        if plugin["id"] in self._manual_stops or not self._company_allowed(plugin): continue
+                        try:
+                            if plugin.get("hardwareGate"):
+                                self._sync_hardware_lifecycle(plugin, self._hardware_available(plugin))
+                            elif plugin.get("keepAlive"):
+                                self._sync_keep_alive_lifecycle(plugin)
+                        except Exception:
+                            self._keep_alive_errors[plugin["id"]] = "此模块维护失败，请手动重试"
+                self._lifecycle_stop.wait(20)
+        self._lifecycle_thread = threading.Thread(target=run, daemon=True, name="toolbox-lifecycle")
+        self._lifecycle_thread.start()
+
 
     def _ensure_private_layer(self) -> None:
         self.private_root.mkdir(parents=True, exist_ok=True)
@@ -188,8 +256,22 @@ class ControlService:
         if data.get("statusFile"):
             executable = expand_path(str(data.get("executable", ""))).resolve()
             status_file = expand_path(str(data["statusFile"])).resolve()
-            if os.path.commonpath([str(status_file), str(executable.parent)]) != str(executable.parent):
-                raise ValueError(f"Plugin statusFile must stay beside its executable in {manifest_path}")
+            if not (status_file.is_relative_to(executable.parent) or (scope != "private" and status_file.is_relative_to(USER_DATA_ROOT))):
+                raise ValueError(f"Plugin statusFile must stay in its module state directory in {manifest_path}")
+        startup = data.get("startup", {})
+        if startup:
+            if startup.get("type") not in {"run", "shortcut"}: raise ValueError("不支持的自启类型")
+            if startup.get("target"):
+                target = expand_path(startup["target"]).resolve()
+                exe = expand_path(data["executable"]).resolve()
+                if (scope == "private" and target != exe) or (scope != "private" and target.parent != exe.parent):
+                    raise ValueError("自启目标超出本模块程序目录")
+            if startup.get("type") == "shortcut":
+                link = expand_path(startup.get("path", "")).resolve()
+                expected = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Startup"
+                if link.parent != expected.resolve() or link.suffix.lower() != ".lnk":
+                    raise ValueError("快捷方式只能位于当前账户 Startup 目录")
+        validate_install_targets(data, self.repo_root)
         start_arguments = data.get("startArguments", [])
         if not isinstance(start_arguments, list) or not all(
             isinstance(value, str) and value and len(value) <= 256 and "\n" not in value and "\r" not in value
@@ -201,26 +283,35 @@ class ControlService:
                 raise ValueError(f"keepAlive must be a boolean in {manifest_path}")
             if data["keepAlive"] and (handler != "process_app" or not data.get("startup") or hardware_gate):
                 raise ValueError(f"keepAlive requires a non-hardware process_app with startup in {manifest_path}")
-        if data.get("bundle"):
-            raise ValueError(f"External binary bundles are not supported in the online edition: {manifest_path}")
         if "updateInstallSource" in data and (
             handler not in {"process_app", "updream_bridge"} or not isinstance(data["updateInstallSource"], bool) or not data.get("installSource")
         ):
-            raise ValueError(f"updateInstallSource requires a built-in installSource in {manifest_path}")
+            raise ValueError(f"updateInstallSource requires a process_app installSource in {manifest_path}")
+        if handler == "network_drive_access":
+            expected_drives(data)
+            if "configProfile" in data:
+                raise ValueError(f"network_drive_access must use built-in Full Access in {manifest_path}")
+
         if scope == "private":
             if not str(data.get("id", "")).startswith("private-"):
                 raise ValueError(f"Private plugin id must start with private- in {manifest_path}")
             if handler != "process_app":
                 raise ValueError(f"Private plugins currently support process_app only in {manifest_path}")
-            if data.get("supportFiles") or data.get("installSource"):
+            if data.get("bundle") or data.get("supportFiles") or data.get("installSource"):
                 raise ValueError(f"Private plugins cannot install repository bundles or support files in {manifest_path}")
             executable = expand_path(str(data.get("executable", ""))).resolve()
-            helpers_root = expand_path(r"%CODEXTOOLS_DATA_ROOT%").resolve()
+            helpers_root = manifest_path.parent.resolve()
             if os.path.commonpath([str(executable), str(helpers_root)]) != str(helpers_root):
                 raise ValueError(f"Private plugin executable must stay under {helpers_root}")
             if executable.name.lower() != str(data.get("processName", "")).lower():
                 raise ValueError(f"Private plugin processName must match its executable filename in {manifest_path}")
-
+            tags = data.get("tags", [])
+            if not isinstance(tags, list) or len(tags) > 8 or any(
+                not isinstance(tag, str) or not tag.strip() or len(tag) > 40 for tag in tags
+            ):
+                raise ValueError(f"Invalid private tags in {manifest_path}")
+            if data.get("receivedFromPrivateShare"):
+                raise ValueError("网络版不安装私人共享模块")
     def _load_plugins(self) -> dict[str, dict[str, Any]]:
         plugins: dict[str, dict[str, Any]] = {}
         self.private_errors = []
@@ -248,40 +339,42 @@ class ControlService:
                     plugins[plugin_id] = data
                 except Exception as exc:
                     if strict:
-                        raise
+                        self.private_errors.append("公共模块无法加载：" + type(exc).__name__)
+                        continue
                     self.private_errors.append(f"{manifest_path.name}: {exc}")
         return plugins
 
     def dashboard(self) -> dict[str, Any]:
         with self._lock:
             cards = []
-            for plugin in self.plugins.values():
-                if not self._company_allowed(plugin):
-                    continue
-                if plugin.get("hardwareGate"):
-                    available = self._hardware_available(plugin)
-                    self._sync_hardware_lifecycle(plugin, available)
-                    if not available:
-                        continue
-                elif plugin.get("keepAlive"):
-                    self._sync_keep_alive_lifecycle(plugin)
-                cards.append(self._plugin_status(plugin))
+            self._dashboard_pid_snapshot = False
+            try:
+                for plugin in self.plugins.values():
+                    try:
+                        if not self._company_allowed(plugin): continue
+                        if plugin.get("hardwareGate") and not self._hardware_available(plugin): continue
+                        cards.append(self._plugin_status(plugin))
+                    except Exception as exc:
+                        cards.append({"id": plugin["id"], "name": plugin.get("name", plugin["id"]), "mode": plugin.get("mode", "on_demand"),
+                            "statusText": "此模块暂不可用", "detailLines": [type(exc).__name__], "actions": plugin.get("uiActions", []),
+                            "uiActions": plugin.get("uiActions", []), "running": False, "enabled": False, "metric": None})
+            finally:
+                del self._dashboard_pid_snapshot
         return {
             "ok": True,
             "app": {
-                "name": "Codex工具箱网络版",
-                "version": "0.20.4",
-                "developers": ["Doorham", "XY", "Althy"],
+                "name": "Codex插件站",
+                "version": "0.20.13",
+                "developers": ["Doorham", "XY", "Althy", "Oreo"],
                 "pluginCount": len(cards),
             },
             "plugins": cards,
+            "company": self.company_access.status(),
             "privateLayer": {
                 "root": str(self.private_root),
-                "sync": False,
-                "upload": False,
+                "sync": False, "upload": False,
                 "errors": self.private_errors,
             },
-            "company": self.company_access.status(),
             "timestamp": int(time.time() * 1000),
         }
 
@@ -374,7 +467,7 @@ class ControlService:
 
 
     def _plugin_pids(self, plugin: dict[str, Any]) -> list[int]:
-        exe = expand_path(plugin["executable"]) if plugin.get("_shared_private") or plugin.get("companyId") else None
+        exe = expand_path(plugin["executable"])
         if hasattr(self, "_dashboard_pid_snapshot"):
             if self._dashboard_pid_snapshot is False:
                 self._dashboard_pid_snapshot = all_process_pids()
@@ -385,11 +478,22 @@ class ControlService:
     def _stop_plugin_process(self, plugin: dict[str, Any]) -> None:
         if hasattr(self, "_dashboard_pid_snapshot"):
             self._dashboard_pid_snapshot = False
-        if plugin.get("_shared_private") or plugin.get("companyId"):
-            for pid in self._plugin_pids(plugin):
-                hidden_run(["taskkill.exe", "/PID", str(pid), "/F"])
+        owned = self._plugin_pids(plugin)
+        if not owned: return
+        exe = expand_path(plugin["executable"])
+        cooperative = {"updream-clipboard-cleaner", "codex-answer-chime", "arctis-nova-5-battery", "logitech-g435-battery", "wetype-awesun-bridge"}
+        if plugin.get("id") in cooperative:
+            result = hidden_run([str(exe), "--stop"], timeout=5)
+            if result.returncode: raise RuntimeError("正常退出请求未成功，原进程保持运行")
         else:
-            hidden_run(["taskkill.exe", "/IM", plugin["processName"], "/F"])
+            for pid in owned:
+                if pid not in process_pids(plugin["processName"], exe): continue
+                result = hidden_run(["taskkill.exe", "/PID", str(pid)])
+                if result.returncode: raise RuntimeError("请从此程序界面正常退出后重试")
+        deadline = time.monotonic() + 3
+        while self._plugin_pids(plugin) and time.monotonic() < deadline:
+            time.sleep(.1)
+        if self._plugin_pids(plugin): raise RuntimeError("程序仍在退出，未启动第二个实例")
 
 
     def _network_drive_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
@@ -557,11 +661,25 @@ class ControlService:
     def _process_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
         exe = expand_path(plugin["executable"])
         pids = self._plugin_pids(plugin)
+        if plugin["id"] == "company-nas-remote-connect":
+            installed = exe.exists()
+            return {
+                "installed": installed,
+                "running": bool(pids),
+                "pids": pids,
+                "startupEnabled": False,
+                "enabled": bool(pids),
+                "recoveryAvailable": False,
+                "statusText": "连接中心已打开" if pids else "可使用" if installed else "需要修复连接程序",
+                "detailLines": [
+                    "连接中心：已打开" if pids else "连接中心：点击下方按钮打开" if installed else "请重新导入公司文件，准备连接程序。",
+                    "关闭连接中心不会断开已连接的网络盘。",
+                    "盘符连接情况请查看“公司网络盘与 Codex 访问”。",
+                ],
+                "metric": None,
+            }
         startup_enabled = self._startup_enabled(plugin, exe)
-        workbuddy = None
-        if plugin["id"] == "codex-answer-chime":
-            workbuddy = workbuddy_hook_status(exe)
-        enabled = bool(pids or startup_enabled or (workbuddy and workbuddy.get("enabled")))
+        enabled = bool(pids or startup_enabled)
         recovery_available = bool(plugin.get("keepAlive") and startup_enabled and not pids)
         keep_alive_error = getattr(self, "_keep_alive_errors", {}).get(str(plugin["id"]))
         if pids and startup_enabled:
@@ -574,7 +692,7 @@ class ControlService:
             status_text = "已停用"
         sound_name = None
         if plugin["id"] == "codex-answer-chime":
-            settings = exe.parent / "settings.json"
+            settings = USER_DATA_ROOT / "CodexAnswerChime" / "settings.json"
             try:
                 relative = json.loads(settings.read_text(encoding="utf-8")).get("SoundFile")
                 sound_name = Path(relative).name if relative else None
@@ -590,14 +708,6 @@ class ControlService:
             details.append("常驻保护：已开启")
         if plugin["id"] == "codex-answer-chime":
             details.append(f"提示音：{sound_name}" if sound_name else "提示音：Windows 错误音（默认）")
-            if not workbuddy or not workbuddy.get("detected"):
-                details.append("WorkBuddy：未检测到，Codex 提示音仍可独立使用")
-            elif not workbuddy.get("valid"):
-                details.append(f"WorkBuddy：{workbuddy.get('error')}")
-            elif workbuddy.get("enabled"):
-                details.append("WorkBuddy：已接入同一任务完成提示音")
-            else:
-                details.append("WorkBuddy：待接入，可使用本卡片配置")
         metric = None
         if plugin["id"] == "arctis-nova-5-battery":
             reading = self._arctis_battery_reading() if pids else {"online": False}
@@ -622,8 +732,6 @@ class ControlService:
             "statusText": status_text,
             "detailLines": details,
             "metric": metric,
-            "workbuddyDetected": bool(workbuddy and workbuddy.get("detected")),
-            "workbuddyHookEnabled": bool(workbuddy and workbuddy.get("enabled")),
         }
 
     def _local_status_metric(self, plugin: dict[str, Any], monitor_running: bool) -> tuple[dict[str, str], list[str]]:
@@ -709,10 +817,14 @@ class ControlService:
             creationflags=CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
             close_fds=True,
         )
+        if hasattr(self, "_dashboard_pid_snapshot"):
+            self._dashboard_pid_snapshot = False
 
     def _recover_keep_alive(self, plugin: dict[str, Any], *, user_initiated: bool = False) -> bool:
         plugin_id = str(plugin["id"])
         exe = expand_path(plugin["executable"])
+        if not user_initiated and plugin_id in getattr(self, "_manual_stops", set()):
+            return False
         if self._plugin_pids(plugin):
             self._keep_alive_errors.pop(plugin_id, None)
             return True
@@ -760,25 +872,24 @@ class ControlService:
             return self._toggle_enabled(plugin, exe)
         if action == "set_sound":
             return self._set_sound(exe, str(payload.get("path", "")))
-        if action == "sync_workbuddy":
-            if plugin["id"] != "codex-answer-chime":
-                raise ValueError("只有任务完成提示音支持 WorkBuddy 接入")
-            self._ensure_installed(plugin, exe)
-            result = ensure_workbuddy_hook(exe, exe.parent / "Backups")
-            if result["changed"]:
-                return "WorkBuddy 已接入同一提示音；请重启 WorkBuddy 并检查 Hooks 后生效"
-            return "WorkBuddy 已正确接入同一提示音，无需重复配置"
         if action in {"start", "restart", "test_sound"}:
             self._ensure_installed(plugin, exe)
+        if action == "stop":
+            self._set_manual_stop(plugin, True)
+            if plugin.get("keepAlive") and plugin.get("startup"):
+                self._set_startup(plugin, exe, False)
         if action in {"stop", "restart"}:
             self._stop_plugin_process(plugin)
             time.sleep(0.35)
         if action in {"start", "restart"}:
+            self._set_manual_stop(plugin, False)
+            if plugin.get("keepAlive") and plugin.get("startup"):
+                self._set_startup(plugin, exe, True)
             self._start_plugin_process(plugin, exe)
             time.sleep(0.6)
             return "已启动" if action == "start" else "已重启"
         if action == "stop":
-            return "已停止"
+            return "已停止；自动恢复与开机自启动已关闭" if plugin.get("keepAlive") and plugin.get("startup") else "已停止"
         if action == "test_sound":
             subprocess.Popen(
                 [str(exe), "--test-sound"],
@@ -797,26 +908,19 @@ class ControlService:
     def _toggle_enabled(self, plugin: dict[str, Any], exe: Path) -> str:
         pids = self._plugin_pids(plugin)
         startup_enabled = self._startup_enabled(plugin, exe)
-        workbuddy = workbuddy_hook_status(exe) if plugin["id"] == "codex-answer-chime" else None
         if plugin.get("keepAlive") and startup_enabled and not pids:
             if self._recover_keep_alive(plugin, user_initiated=True):
                 return "已恢复运行；开机自启动保持开启"
-        if pids or startup_enabled or (workbuddy and workbuddy.get("enabled")):
+        if pids or startup_enabled:
+            self._set_manual_stop(plugin, True)
             if pids:
                 self._stop_plugin_process(plugin)
                 time.sleep(0.35)
             self._set_startup(plugin, exe, False)
-            workbuddy_note = ""
-            if workbuddy and workbuddy.get("detected"):
-                try:
-                    result = remove_workbuddy_hook(exe.parent / "Backups")
-                    if result["changed"]:
-                        workbuddy_note = "；WorkBuddy 完成事件已解除"
-                except Exception as exc:
-                    workbuddy_note = f"；但 WorkBuddy 接入未能解除：{exc}"
-            return f"已停用；Codex 监听已停止，开机自启动已关闭{workbuddy_note}"
+            return "已停用；程序已停止，开机自启动已关闭"
 
         self._ensure_installed(plugin, exe)
+        self._set_manual_stop(plugin, False)
         self._set_startup(plugin, exe, True)
         try:
             subprocess.Popen(
@@ -832,17 +936,10 @@ class ControlService:
         if not self._plugin_pids(plugin):
             self._set_startup(plugin, exe, False)
             raise RuntimeError("程序未能保持运行，已回滚开机自启动")
-        if workbuddy and workbuddy.get("detected"):
-            try:
-                result = ensure_workbuddy_hook(exe, exe.parent / "Backups")
-                note = "；WorkBuddy 已接入，请重启 WorkBuddy 并检查 Hooks" if result["changed"] else "；WorkBuddy 已接入"
-            except Exception as exc:
-                note = f"；Codex 已开启，但 WorkBuddy 接入失败：{exc}"
-        else:
-            note = "；未检测到 WorkBuddy"
-        return f"已开启；Codex 监听正在运行，并已加入开机自启动{note}"
+        return "已开启；程序正在运行，并已加入开机自启动"
 
     def _ensure_installed(self, plugin: dict[str, Any], exe: Path) -> None:
+        validate_install_targets({**plugin, "executable": str(exe)}, self.repo_root)
         if not exe.exists() or plugin.get("updateInstallSource"):
             install_source = plugin.get("installSource")
             if install_source:
@@ -853,60 +950,77 @@ class ControlService:
                     raise ValueError("插件安装源必须位于 artifacts/helpers")
                 if source.name.lower() != exe.name.lower():
                     raise ValueError("插件安装源文件名与目标程序不一致")
+                ensure_helper_artifact_current(self.repo_root, plugin.get("id", ""), source)
                 if not source.is_file() and plugin["id"] == "wetype-awesun-bridge":
                     build_voice_bridge(self.repo_root, source)
                 if not source.is_file():
                     raise FileNotFoundError(f"构建产物不存在，请运行相应模块的构建脚本：{source}")
                 if not exe.exists() or hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(exe.read_bytes()).digest():
-                    if exe.exists() and process_pids(plugin.get("processName", exe.name)):
+                    if exe.exists() and process_pids(plugin.get("processName", exe.name), exe):
                         raise RuntimeError("配置窗口仍在运行；请先关闭后重试更新。")
                     exe.parent.mkdir(parents=True, exist_ok=True)
                     temporary = exe.with_suffix(".installing")
                     shutil.copy2(source, temporary)
                     temporary.replace(exe)
             else:
-                raise FileNotFoundError(f"程序不存在：{exe}")
+                bundle = plugin.get("bundle")
+                if not bundle:
+                    raise FileNotFoundError(f"程序不存在：{exe}")
+                archive = self.repo_root / bundle["archive"]
+                if not archive.is_file():
+                    raise FileNotFoundError(f"插件包不存在：{archive}")
+                archive_hash = hashlib.sha256(archive.read_bytes()).hexdigest().upper()
+                if archive_hash != bundle["archiveSha256"].upper():
+                    raise RuntimeError("插件包哈希校验失败")
+                with zipfile.ZipFile(archive) as package:
+                    data = package.read(bundle["member"])
+                binary_hash = hashlib.sha256(data).hexdigest().upper()
+                if binary_hash != bundle["binarySha256"].upper():
+                    raise RuntimeError("插件程序哈希校验失败")
+                exe.parent.mkdir(parents=True, exist_ok=True)
+                temporary = exe.with_suffix(".installing")
+                temporary.write_bytes(data)
+                temporary.replace(exe)
         for support in plugin.get("supportFiles", []):
             source = self.repo_root / support["source"]
             target = expand_path(support["target"])
             if not source.is_file():
                 raise FileNotFoundError(f"插件支持文件不存在：{source}")
+            if target.is_file() and source.read_bytes() == target.read_bytes():
+                continue
+            if plugin.get("processName") and process_pids(plugin["processName"], exe):
+                raise RuntimeError("程序仍在运行，请正常退出后更新支持文件")
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            temporary = target.with_name(target.name + ".installing")
+            shutil.copy2(source, temporary)
+            temporary.replace(target)
 
     def _startup_enabled(self, plugin: dict[str, Any], exe: Path) -> bool:
         startup = plugin.get("startup", {})
         enabled = False
         if startup.get("type") == "run":
             value = read_run_value(startup["name"])
-            enabled = bool(value and str(exe).lower() in value.lower())
+            enabled = bool(value and command_targets(value, exe))
         elif startup.get("type") == "shortcut":
-            enabled = expand_path(startup["path"]).exists()
+            enabled = shortcut_target(expand_path(startup["path"])) == expand_path(startup.get("target", str(exe))).resolve()
         legacy_paths = startup.get("legacyPaths", [])
         legacy_runs = startup.get("legacyRunNames", [])
-        return enabled or any(expand_path(path).exists() for path in legacy_paths) or any(
-            bool(value := read_run_value(name)) and str(exe).lower() in value.lower()
+        return enabled or any(shortcut_target(expand_path(path)) == exe.resolve() for path in legacy_paths) or any(
+            bool(value := read_run_value(name)) and command_targets(value, exe)
             for name in legacy_runs
         )
 
     def _remove_legacy_startup(self, startup: dict[str, Any]) -> None:
-        for path in startup.get("legacyPaths", []):
-            try:
-                expand_path(path).unlink()
-            except FileNotFoundError:
-                pass
-        if startup.get("legacyRunNames"):
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-                for name in startup["legacyRunNames"]:
-                    try:
-                        winreg.DeleteValue(key, name)
-                    except FileNotFoundError:
-                        pass
+        # Old entries need an explicit local recovery action with target ownership checks.
+        return
 
     def _set_startup(self, plugin: dict[str, Any], exe: Path, enabled: bool) -> None:
         startup = plugin.get("startup", {})
         if startup.get("type") == "run":
             name = startup["name"]
+            current = read_run_value(name)
+            if current and not command_targets(current, exe):
+                raise ValueError("同名自启属于其他程序，未修改")
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
                 if enabled:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, f'"{exe}"')
@@ -919,6 +1033,9 @@ class ControlService:
             return
         if startup.get("type") == "shortcut":
             shortcut = expand_path(startup["path"])
+            target = expand_path(startup.get("target", str(exe)))
+            if shortcut.exists() and shortcut_target(shortcut) != target.resolve():
+                raise ValueError("同名快捷方式属于其他程序，未修改")
             if not enabled:
                 try:
                     shortcut.unlink()
@@ -957,7 +1074,8 @@ class ControlService:
         extension = source.suffix.lower()
         if extension not in {".wav", ".mp3", ".wma"}:
             raise ValueError("支持 WAV、MP3 和 WMA 格式")
-        sounds = exe.parent / "Sounds"
+        state = USER_DATA_ROOT / "CodexAnswerChime"
+        sounds = state / "Sounds"
         sounds.mkdir(parents=True, exist_ok=True)
         destination = sounds / f"completion{extension}"
         for existing in sounds.glob("completion.*"):
@@ -966,47 +1084,17 @@ class ControlService:
         if source.resolve() != destination.resolve():
             shutil.copy2(source, destination)
         settings = {"SoundFile": str(Path("Sounds") / destination.name)}
-        (exe.parent / "settings.json").write_text(
+        (state / "settings.json").write_text(
             json.dumps(settings, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         return f"提示音已复制并设为：{destination.name}"
 
     def _toggle_startup(self, plugin: dict[str, Any], exe: Path) -> str:
-        startup = plugin.get("startup", {})
-        if startup.get("type") == "run":
-            name = startup["name"]
-            current = read_run_value(name)
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-                if current:
-                    winreg.DeleteValue(key, name)
-                    return "已关闭开机自启"
-                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, f'"{exe}"')
-                return "已开启开机自启"
-        if startup.get("type") == "shortcut":
-            shortcut = expand_path(startup["path"])
-            if shortcut.exists():
-                shortcut.unlink()
-                return "已关闭开机自启"
-            shortcut.parent.mkdir(parents=True, exist_ok=True)
-            def ps_quote(value: str) -> str:
-                return value.replace("'", "''")
-            script = (
-                "$w=New-Object -ComObject WScript.Shell;"
-                f"$s=$w.CreateShortcut('{ps_quote(str(shortcut))}');"
-                f"$s.TargetPath='{ps_quote(str(exe))}';"
-                f"$s.WorkingDirectory='{ps_quote(str(exe.parent))}';"
-                f"$s.Description='{ps_quote(plugin['name'])}';$s.Save()"
-            )
-            encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-            result = hidden_run([
-                "powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
-                "-EncodedCommand", encoded,
-            ])
-            if result.returncode != 0 or not shortcut.exists():
-                raise RuntimeError("创建 Startup 快捷方式失败")
-            return "已开启开机自启"
-        raise ValueError("插件没有可控制的启动项")
+        enabled = not self._startup_enabled(plugin, exe)
+        self._set_startup(plugin, exe, enabled)
+        self._set_manual_stop(plugin, not enabled)
+        return "已开启开机自启" if enabled else "已关闭开机自启"
 
     def _codex_proxy_status(self, plugin: dict[str, Any]) -> dict[str, Any]:
         config = codex_proxy_config_status()

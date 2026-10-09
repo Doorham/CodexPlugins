@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -22,6 +22,7 @@ namespace CompanyAIHelpers.CodexAnswerChime
 
         static void Main(string[] args)
         {
+            if (RuntimeControl.HandleStop(args)) return;
             if (args.Length == 1 && string.Equals(args[0], "--codextools-workbuddy-hook", StringComparison.OrdinalIgnoreCase))
             {
                 try { StartDetachedPlaybackWorker(); } catch { }
@@ -71,7 +72,8 @@ namespace CompanyAIHelpers.CodexAnswerChime
                     watcher.Renamed += delegate(object sender, RenamedEventArgs e) { ProcessFile(e.FullPath); };
                     watcher.EnableRaisingEvents = true;
                     WriteStatus(tailed, true);
-                    while (true) Thread.Sleep(60000);
+                    RuntimeControl.Initialize();
+                    while (!RuntimeControl.StopRequested) Thread.Sleep(200);
                 }
             }
         }
@@ -331,7 +333,7 @@ namespace CompanyAIHelpers.CodexAnswerChime
         {
             try
             {
-                string baseDirectory = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+                string baseDirectory = Path.GetFullPath(RuntimePaths.ForTool("CodexAnswerChime"));
                 string settingsPath = Path.Combine(baseDirectory, "settings.json");
                 if (!File.Exists(settingsPath)) return null;
                 var settings = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(settingsPath, Encoding.UTF8)) as Dictionary<string, object>;
@@ -356,7 +358,7 @@ namespace CompanyAIHelpers.CodexAnswerChime
                     { "ProcessId", Process.GetCurrentProcess().Id }, { "ExistingFilesTailedFromEnd", tailed },
                     { "WatcherActive", active }
                 };
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "listener-status.json");
+                string path = Path.Combine(RuntimePaths.ForTool("CodexAnswerChime"), "listener-status.json");
                 File.WriteAllText(path, new JavaScriptSerializer().Serialize(status), new UTF8Encoding(false));
             }
             catch { }

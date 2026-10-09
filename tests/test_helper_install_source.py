@@ -17,13 +17,13 @@ class HelperInstallSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_root:
             repo_root = Path(temporary_root)
             source = repo_root / "artifacts" / "helpers" / "CodexAnswerChime.exe"
-            target = repo_root / "install" / "CodexAnswerChime.exe"
+            target = repo_root / ".runtime/CompanyAIHelpers/Fixture" / "CodexAnswerChime.exe"
             source.parent.mkdir(parents=True)
             source.write_bytes(b"built-helper")
             service = object.__new__(ControlService)
             service.repo_root = repo_root
 
-            service._ensure_installed({"installSource": "artifacts/helpers/CodexAnswerChime.exe"}, target)
+            service._ensure_installed({"executable": str(target), "installSource": "artifacts/helpers/CodexAnswerChime.exe"}, target)
 
             self.assertEqual(target.read_bytes(), b"built-helper")
             self.assertFalse(target.with_suffix(".installing").exists())
@@ -37,7 +37,7 @@ class HelperInstallSourceTests(unittest.TestCase):
             service.repo_root = repo_root
 
             with self.assertRaises(ValueError):
-                service._ensure_installed({"installSource": "outside.exe"}, repo_root / "install" / "outside.exe")
+                service._ensure_installed({"executable": str(repo_root / ".runtime/CompanyAIHelpers/Fixture/outside.exe"), "installSource": "outside.exe"}, repo_root / ".runtime/CompanyAIHelpers/Fixture" / "outside.exe")
 
 
 if __name__ == "__main__":

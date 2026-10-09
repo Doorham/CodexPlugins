@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .config_transaction import config_lock, replace_config
+
 import json
 import os
 import re
@@ -9,8 +11,8 @@ import time
 import tomllib
 import winreg
 from pathlib import Path
-from .tool_paths import TOOL_DATA_ROOT
 from typing import Any, Callable
+from .tool_paths import USER_DATA_ROOT
 
 
 CREATE_NO_WINDOW = 0x08000000
@@ -120,7 +122,13 @@ def _updated_config(original: str) -> str:
     return updated
 
 
-def ensure_system_proxy_feature(
+def ensure_system_proxy_feature(*, config: Path | None = None, backup_root: Path | None = None) -> dict[str, Any]:
+    path = (config or codex_config_path()).resolve()
+    with config_lock(path):
+        return _ensure_system_proxy_feature(config=path, backup_root=backup_root)
+
+
+def _ensure_system_proxy_feature(
     *,
     config: Path | None = None,
     backup_root: Path | None = None,
@@ -145,7 +153,7 @@ def ensure_system_proxy_feature(
 
     backup = None
     if path.exists():
-        destination = backup_root or TOOL_DATA_ROOT / "CodexSystemProxy" / "Backups"
+        destination = backup_root or USER_DATA_ROOT / "CodexSystemProxy" / "Backups"
         destination.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backup = destination / f"config-before-system-proxy-{stamp}.toml"
@@ -155,9 +163,7 @@ def ensure_system_proxy_feature(
             counter += 1
         shutil.copy2(path, backup)
 
-    temporary = path.with_name(f"{path.name}.codextools-updating")
-    temporary.write_text(updated, encoding="utf-8", newline="")
-    temporary.replace(path)
+    replace_config(path, original, updated)
     verified = config_status(path)
     if not verified["configured"]:
         raise RuntimeError("配置写入后未通过回读验证")

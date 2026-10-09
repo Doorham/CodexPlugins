@@ -43,7 +43,7 @@ class CodexSystemProxyTests(unittest.TestCase):
             and any(isinstance(target, ast.Name) and target.id == "APP_VERSION" for target in node.targets)
         )
         self.assertEqual(release["version"], app_version)
-        self.assertEqual(self.plugin["moduleVersion"], "1.1.1")
+        self.assertEqual(self.plugin["moduleVersion"], "1.1.2")
         self.assertEqual(self.plugin["name"], "Codex 对话 timeout 修复")
         self.assertEqual(self.plugin["developers"], ["Althy", "DRHW"])
         self.assertEqual(module["version"], self.plugin["moduleVersion"])

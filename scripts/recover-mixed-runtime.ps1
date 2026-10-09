@@ -1,9 +1,10 @@
 ﻿[CmdletBinding()]
-param([ValidateSet('Prepare','Finish','Rollback','Resume')][string]$Phase='Prepare',
+param([ValidateSet('Prepare','Finish','Rollback','Resume','RebindStartup')][string]$Phase='Prepare',
       [Parameter(Mandatory=$true)][string]$RecoveryId, [switch]$Confirmed,
       [switch]$DesktopWorker, [switch]$NoLaunch, [string]$FailedBackupName='')
 # Explicit maintenance recovery. Never stop a process or sign out Windows.
 $ErrorActionPreference='Stop'
+if($Phase -notin @('Rollback','RebindStartup')){throw '整目录迁移恢复已停用；只允许恢复已暂停的原自启。个人原件与备份保持原处。'}
 $env:PSModulePath=$null
 if(-not $Confirmed){throw 'User authorization to prepare/recover these exact startup entries is required.'}
 if($RecoveryId -notmatch '^[a-f0-9]{32}$'){throw 'Invalid recovery identity.'}
@@ -59,6 +60,34 @@ function Read-OptionalRunValue([string]$Path,[string]$Name){
     return $null
 }
 function Restore-Startup($state,[bool]$Migrated){
+    # Preflight all entries before changing any; never compare personal files.
+    $shell=New-Object -ComObject WScript.Shell
+    foreach($entry in @($state.runEntries)) {
+        $relative=Owned-Relative (Command-Target $entry.command)
+        if(-not $relative){throw 'Unapproved startup target.'}
+        $target=if($Migrated){Join-Path $destination $relative}else{Join-Path $legacy $relative}
+        Assert-Regular $target
+        if(-not [IO.File]::Exists($target)){throw 'Public restoration target absent.'}
+        $desired=$entry.command.Replace((Join-Path $legacy $relative),$target)
+        $current=Read-OptionalRunValue $runPath $entry.name
+        if($null -ne $current -and $current -ne $desired -and $current -ne $entry.command){throw 'Startup changed; none overwritten.'}
+    }
+    foreach($entry in @($state.links)) {
+        $relative=Owned-Relative $entry.target
+        $path=[IO.Path]::GetFullPath($entry.path)
+        $copy=[IO.Path]::GetFullPath((Join-Path $folder $entry.backup))
+        if(-not $relative -or [IO.Path]::GetDirectoryName($path) -ne $startup -or
+            -not $copy.StartsWith($folder+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Unapproved shortcut backup.'}
+        Assert-Regular $copy;Assert-Regular $path
+        if((Hash $copy) -ne $entry.sha256){throw 'Public shortcut backup changed.'}
+        $target=if($Migrated){Join-Path $destination $relative}else{$entry.target}
+        Assert-Regular $target
+        if(-not [IO.File]::Exists($target)){throw 'Public shortcut target absent.'}
+        if([IO.File]::Exists($path) -and (Hash $path) -ne $entry.sha256){
+            $current=$shell.CreateShortcut($path)
+            if(-not $Migrated -or $current.TargetPath -ne $target -or $current.Arguments -ne $entry.arguments){throw 'Shortcut changed; none overwritten.'}
+        }
+    }
     # Validate every stored entry again; JSON cannot authorize arbitrary paths.
     foreach($entry in @($state.runEntries)){
         $relative=Owned-Relative (Command-Target $entry.command)
@@ -84,7 +113,10 @@ function Restore-Startup($state,[bool]$Migrated){
         Assert-Regular $target
         if(-not [IO.File]::Exists($target)){throw 'Shortcut target is absent; backup retained.'}
         if([IO.File]::Exists($path)){
-            if((Hash $path) -ne $entry.sha256){throw 'Shortcut changed after preparation.'}
+            if((Hash $path) -ne $entry.sha256){
+                $existing=$shell.CreateShortcut($path)
+                if(-not $Migrated -or $existing.TargetPath -ne $target -or $existing.Arguments -ne $entry.arguments){throw 'Shortcut changed after preparation.'}
+            }
         }
         if(-not $Migrated){[IO.File]::Copy($copy,$path,$true);continue}
         $link=$shell.CreateShortcut($path)
@@ -109,7 +141,13 @@ if(-not $DesktopWorker){
     $task=$tasks.RegisterTaskDefinition($taskName,$definition,2,$sid,$null,3,$null)
     $task.Run($null)|Out-Null
     $deadline=[DateTime]::UtcNow.AddSeconds(50)
-    while(-not [IO.File]::Exists($receipt) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 200}
+    while(-not [IO.File]::Exists($receipt) -and [DateTime]::UtcNow -lt $deadline){
+        $observed=$tasks.GetTask($taskName)
+        if($observed.State -eq 3 -and $observed.LastTaskResult -eq -2147024891){
+            throw 'Desktop recovery task was denied permission before starting; startup and originals retained.'
+        }
+        Start-Sleep -Milliseconds 200
+    }
     if(-not [IO.File]::Exists($receipt)){throw 'Desktop recovery has not acknowledged completion; do not terminate or repeat it.'}
     $result=[IO.File]::ReadAllText($receipt)|ConvertFrom-Json
     $result|ConvertTo-Json -Compress
@@ -119,139 +157,39 @@ $mutex=[Threading.Mutex]::new($false,('Local\CompanyAIHelpers.RuntimeRecovery.'+
 if(-not $mutex.WaitOne(0)){throw 'Another recovery worker owns this operation.'}
 $state=$null
 try {
-    if($Phase -eq 'Prepare'){
-        if([IO.File]::Exists($statePath)){throw 'A recovery already exists; inspect its state before repeating.'}
-        $originalActiveHash=Hash $active
-        $old=[IO.File]::ReadAllText($active)|ConvertFrom-Json
-        if($old.state -ne 'failed' -or $old.requestId -ne $RecoveryId -or $old.backupName -notmatch '^runtime-move-[0-9-]+$'){throw 'Only the documented failed request can be prepared.'}
-        $oldBackup=Join-Path $runtime ('migration-backups\'+$old.backupName)
-        Assert-Regular $oldBackup
-        $failurePath=Join-Path $oldBackup 'failure.json';Assert-Regular $failurePath
-        $failure=[IO.File]::ReadAllText($failurePath)|ConvertFrom-Json
-        if($failure.phase -ne 'Stage' -or $failure.error -ne 'Source contains unrecognized files; nothing will be removed.' -or
-            [IO.File]::Exists((Join-Path $oldBackup 'stage-result.json')) -or [IO.File]::Exists((Join-Path $oldBackup 'result.json'))){throw 'Failure is outside the reviewed pre-Stage recovery case.'}
-        $migration=Join-Path $PSScriptRoot 'migrate-workspace-runtime.ps1'
-        Assert-Regular $migration
-        if(-not [IO.File]::ReadAllText($migration).Contains('function Get-OwnedSourceItems')){throw 'Update to the partial-component migration repair first.'}
-        $oldTaskName='CompanyAIHelpers.RuntimeMigration.'+$sid+'.'+$RecoveryId
-        $scheduler=New-Object -ComObject Schedule.Service;$scheduler.Connect()
-        if(@($scheduler.GetFolder('\').GetTasks(1)|Where-Object{$_.Name -eq $oldTaskName}).Count){throw 'Old request still has a task; preparation stopped.'}
-        $pattern=[regex]::Escape((Join-Path $PSScriptRoot 'auto-migrate-runtime.ps1'))
-        if(@(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'"|Where-Object{$_.CommandLine -match $pattern}).Count){throw 'Old migration worker still exists.'}
-        $runs=@();$links=@();$shell=New-Object -ComObject WScript.Shell
-        if(Test-Path -LiteralPath $runPath){
-            foreach($property in (Get-ItemProperty -LiteralPath $runPath).PSObject.Properties){
-                if($property.Name -like 'PS*' -or $property.Value -isnot [string]){continue}
-                $relative=Owned-Relative (Command-Target $property.Value)
-                if($relative){$runs += [pscustomobject]@{name=$property.Name;command=$property.Value}}
+    $state=[IO.File]::ReadAllText($statePath)|ConvertFrom-Json
+    if($state.recoveryId -ne $RecoveryId -or $state.ownerSid -ne $sid -or $state.status -ne 'prepared'){throw 'Recovery ownership/state does not match.'}
+    if((Hash $active) -ne $state.originalActiveSha256){throw 'Active migration changed; original backup retained.'}
+    if ($Phase -eq 'RebindStartup') {
+        # Build/copy only the approved public programs. No private tree migration.
+        & (Join-Path $PSScriptRoot 'build-helpers.ps1') | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Public helper build failed; startup retained.' }
+        foreach ($relative in $executables) {
+            $source = Join-Path $repo ('artifacts\helpers\' + [IO.Path]::GetFileName($relative))
+            $target = Join-Path $destination $relative
+            Assert-Regular $source;Assert-Regular $target
+            if (-not [IO.File]::Exists($source)) { throw 'Approved public program artifact missing.' }
+            $changed = -not [IO.File]::Exists($target) -or (Hash $source) -ne (Hash $target)
+            $owned = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and
+                ([string]::Equals($_.ExecutablePath,(Join-Path $legacy $relative),[StringComparison]::OrdinalIgnoreCase) -or
+                 [string]::Equals($_.ExecutablePath,$target,[StringComparison]::OrdinalIgnoreCase)) })
+            if ($owned.Count) { throw 'Approved old helper still running; exit it normally. No process stopped.' }
+            if ($changed) {
+                [IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
+                $temporary=$target+'.'+[Guid]::NewGuid().ToString('N')+'.installing'
+                [IO.File]::Copy($source,$temporary,$false)
+                Move-Item -LiteralPath $temporary -Destination $target -Force
             }
         }
-        $startupLinks=if([IO.Directory]::Exists($startup)){@(Get-ChildItem -LiteralPath $startup -Filter '*.lnk' -File)}else{@()}
-        foreach($file in $startupLinks){
-            Assert-Regular $file.FullName
-            $link=$shell.CreateShortcut($file.FullName)
-            if(-not (Owned-Relative $link.TargetPath)){continue}
-            $name=[Guid]::NewGuid().ToString('N')+'.lnk'
-            [IO.File]::Copy($file.FullName,(Join-Path $folder $name),$false)
-            $links += [pscustomobject]@{path=$file.FullName;backup=$name;sha256=(Hash $file.FullName);target=$link.TargetPath;
-                arguments=$link.Arguments;workingDirectory=$link.WorkingDirectory;iconLocation=$link.IconLocation;description=$link.Description}
-        }
-        if((Hash $active) -ne $originalActiveHash){throw 'Active migration changed before preparation.'}
-        [IO.File]::Copy($active,(Join-Path $folder 'failed-active-original.json'),$false)
-        if((Hash (Join-Path $folder 'failed-active-original.json')) -ne $originalActiveHash){throw 'Original failed record copy differs.'}
-        $state=[pscustomobject]@{schemaVersion=1;recoveryId=$RecoveryId;status='preparing';ownerSid=$sid;
-            originalActiveSha256=$originalActiveHash;migrationSha256=(Hash $migration);runEntries=$runs;links=$links}
-        Save-Json $statePath $state
-        if((Hash $active) -ne $originalActiveHash){throw 'Active migration changed before startup pause.'}
-        foreach($entry in $runs){
-            if((Get-ItemPropertyValue -LiteralPath $runPath -Name $entry.name) -ne $entry.command){throw 'Run entry changed before pause.'}
-            Remove-ItemProperty -LiteralPath $runPath -Name $entry.name
-        }
-        foreach($entry in $links){
-            if((Hash $entry.path) -ne $entry.sha256){throw 'Shortcut changed before pause.'}
-            # Resolved source is a direct Startup child; destination is the
-            # verified operation folder. Keep the original, never delete it.
-            $paused=[IO.Path]::GetFullPath((Join-Path $folder ('paused-'+$entry.backup)))
-            if([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($entry.path)) -ne $startup -or
-                -not $paused.StartsWith($folder+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Pause move escaped its scope.'}
-            [IO.File]::Move($entry.path,$paused)
-        }
-        $state.status='prepared';Save-Json $statePath $state
-        Save-Json $receipt ([pscustomobject]@{ok=$true;phase=$Phase;recoveryId=$RecoveryId;pausedRunCount=$runs.Count;pausedShortcutCount=$links.Count;
-            nextAction='Save work and sign out of Windows normally; after signing in, authorize Finish in Codex. No process was stopped.'})
-    }else{
-        $state=[IO.File]::ReadAllText($statePath)|ConvertFrom-Json
-        if($state.recoveryId -ne $RecoveryId -or $state.ownerSid -ne $sid -or $state.status -ne 'prepared'){throw 'Recovery ownership/state does not match.'}
-        if((Hash $active) -ne $state.originalActiveSha256){throw 'Active migration changed; original backup retained.'}
-        if($Phase -eq 'Rollback'){
-            Restore-Startup $state $false
-            $state.status='rolled-back';Save-Json $statePath $state
-        }else{
-            $migration=Join-Path $PSScriptRoot 'migrate-workspace-runtime.ps1'
-            if($Phase -eq 'Resume'){
-                # A single explicit continuation of the reviewed 0.20.11
-                # pre-copy failure. Keep Finish receipt and old backups intact.
-                $reviewedOldHashes=@('ED356E06137EF12430B773C2EC282B4AC7832AEA4375801B540BFEF437F7B7C5',
-                    'AD51AFDEC2AB1205F4570335EA5EB579B58D95F0F7E0DEE5CBB91FCDB335813F')
-                $priorReceiptPath=Join-Path $folder 'receipt-Finish.json';Assert-Regular $priorReceiptPath
-                $priorReceipt=[IO.File]::ReadAllText($priorReceiptPath)|ConvertFrom-Json
-                if($state.migrationSha256 -notin $reviewedOldHashes -or $state.resumeFromMissingNas -or
-                    $priorReceipt.ok -ne $false -or $priorReceipt.phase -ne 'Finish' -or $priorReceipt.recoveryId -ne $RecoveryId -or
-                    $priorReceipt.error -ne 'Controlled migration failed: Stage. Originals and both backups retained.'){
-                    throw 'Resume is outside the reviewed one-time pre-Stage failure.'
-                }
-                $failedBackup=Join-Path $runtime ('migration-backups\'+$FailedBackupName);Assert-Regular $failedBackup
-                foreach($name in @('stage-result.json','result.json','snapshots','originals')){
-                    if(Test-Path -LiteralPath (Join-Path $failedBackup $name)){throw 'Stage already copied or archived data; do not resume automatically.'}
-                }
-                $failurePath=Join-Path $failedBackup 'failure.json';Assert-Regular $failurePath
-                $failure=[IO.File]::ReadAllText($failurePath)|ConvertFrom-Json
-                if($failure.phase -ne 'Stage' -or $failure.error -notlike '*CompanyAIHelpers.NasSavedMappings*' -or
-                    $null -ne (Read-OptionalRunValue $runPath 'CompanyAIHelpers.NasSavedMappings')){throw 'Optional NAS failure does not match the reviewed absent-value case.'}
-                foreach($entry in @($state.runEntries)){
-                    if($null -ne (Read-OptionalRunValue $runPath $entry.name)){throw 'Prepared Run entry is no longer paused.'}
-                }
-                foreach($entry in @($state.links)){
-                    Assert-Regular $entry.path
-                    if(Test-Path -LiteralPath $entry.path){throw 'Prepared shortcut is no longer paused.'}
-                }
-                Assert-Regular $migration
-                $state|Add-Member -NotePropertyName resumeFromMissingNas -NotePropertyValue ([pscustomobject]@{
-                    previousMigrationSha256=$state.migrationSha256;failedBackupName=$FailedBackupName;
-                    finishReceiptSha256=(Hash $priorReceiptPath);authorizedAt=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()})
-                $state.migrationSha256=Hash $migration
-                Save-Json $statePath $state
-            }
-            if((Hash $migration) -ne $state.migrationSha256){throw 'Prepared migrator changed; do not resume with different code.'}
-            $backupName='runtime-move-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[DateTime]::UtcNow.Ticks
-            foreach($migrationPhase in @('Stage','Finalize')){
-                & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $migration -Phase $migrationPhase -BackupName $backupName -NoForce | Out-Null
-                if($LASTEXITCODE -ne 0){throw ('Controlled migration failed: '+$migrationPhase+'. Originals and both backups retained.')}
-            }
-            $result=[IO.File]::ReadAllText((Join-Path $runtime ('migration-backups\'+$backupName+'\result.json')))|ConvertFrom-Json
-            if($result.phase -ne 'complete' -or $result.oldRootsRemain -ne 0){throw 'Owned-component migration did not verify.'}
-            Restore-Startup $state $true
-            if((Hash $active) -ne $state.originalActiveSha256){throw 'Active migration changed before completion.'}
-            $complete=[pscustomobject]@{schemaVersion=1;requestId=[Guid]::NewGuid().ToString('N');previousRequestId=$RecoveryId;
-                backupName=$backupName;state='complete';updatedAt=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds();maintenanceRecovery=$true}
-            Save-Json $active $complete
-            $state.status='complete';$state|Add-Member -NotePropertyName completedBackupName -NotePropertyValue $backupName
-            Save-Json $statePath $state
-            if(-not $NoLaunch){
-                foreach($relative in @('UpdreamClipboardCleaner\UpdreamClipboardCleaner.exe','CodexAnswerChime\CodexAnswerChime.exe','ArctisNova5BatteryMonitor\ArctisNova5StartupGate.exe')){
-                    $wasEnabled=@($state.runEntries|Where-Object{(Owned-Relative (Command-Target $_.command)) -eq $relative}).Count -gt 0 -or
-                        @($state.links|Where-Object{(Owned-Relative $_.target) -eq $relative -or
-                            ($_.target -eq (Join-Path $legacy 'ArctisNova5BatteryMonitor\ArctisNova5BatteryMonitor.exe') -and $relative -like '*StartupGate.exe')}).Count -gt 0
-                    $program=Join-Path $destination $relative
-                    if($wasEnabled -and [IO.File]::Exists($program)){Start-Process -FilePath $program -WorkingDirectory (Split-Path -Parent $program) -WindowStyle Hidden}
-                }
-                Start-Process -FilePath (Join-Path $runtime 'venv\Scripts\pythonw.exe') -ArgumentList ('"'+(Join-Path $repo 'apps\plugin-station\app.py')+'"') -WorkingDirectory $repo -WindowStyle Hidden
-            }
-        }
-        Save-Json $receipt ([pscustomobject]@{ok=$true;phase=$Phase;recoveryId=$RecoveryId;status=$state.status;originalFailurePreserved=$true})
+        Restore-Startup $state $true
+        $state.status='rebound'
+    } else {
+        Restore-Startup $state $false
+        $state.status='rolled-back'
     }
+    Save-Json $statePath $state
+    Save-Json $receipt ([pscustomobject]@{ok=$true;phase=$Phase;recoveryId=$RecoveryId;status=$state.status;originalFailurePreserved=$true})
 }catch{
-    if($Phase -eq 'Prepare' -and $state){try{Restore-Startup $state $false}catch{}}
     Save-Json $receipt ([pscustomobject]@{ok=$false;phase=$Phase;recoveryId=$RecoveryId;error=$_.Exception.Message;originalsPreserved=$true})
 }finally{
     $mutex.ReleaseMutex();$mutex.Dispose()

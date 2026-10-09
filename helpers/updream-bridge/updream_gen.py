@@ -14,9 +14,12 @@ from pathlib import Path
 
 BASE = "https://www.updream.cn/api"
 _script_root = Path(__file__).resolve().parent
-_data_root = Path(os.environ["CODEXTOOLS_DATA_ROOT"]) if os.environ.get("CODEXTOOLS_DATA_ROOT") else (
-    _script_root.parent if _script_root.parent.name == "CompanyAIHelpers"
-    else _script_root.parents[1] / ".runtime" / "CompanyAIHelpers")
+# Import the reviewed identity resolver from this checkout, also when invoked as CLI.
+_repo_root = next((parent for parent in _script_root.parents if (parent / "apps/plugin-station/core/tool_paths.py").is_file()), None)
+if _repo_root is None:
+    raise RuntimeError("找不到工具箱源码，未打开任何账号数据")
+sys.path.insert(0, str(_repo_root / "apps/plugin-station"))
+from core.tool_paths import USER_DATA_ROOT as _data_root
 CRED_PATH = _data_root / "UpdreamBridge" / "credentials.json"
 _ctx = ssl.create_default_context()
 

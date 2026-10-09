@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.20.12",
+  "version": "0.20.13",
   "license": "Apache-2.0",
   "developers": [
     "Doorham",
@@ -19,7 +19,7 @@
   "modules": [
     {
       "id": "updream-bridge",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "developers": [
         "Doorham",
         "Althy",
@@ -28,7 +28,7 @@
     },
     {
       "id": "codex-system-proxy",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "developers": [
         "Althy",
         "DRHW"
@@ -36,7 +36,7 @@
     },
     {
       "id": "cn-proxy-bypass",
-      "version": "1.2.7",
+      "version": "1.2.8",
       "developers": [
         "Doorham",
         "Althy",
@@ -45,7 +45,7 @@
     },
     {
       "id": "updream-clipboard-cleaner",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "developers": [
         "Doorham",
         "XY",
@@ -55,7 +55,7 @@
     },
     {
       "id": "codex-answer-chime",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "developers": [
         "Doorham",
         "Althy",
@@ -64,7 +64,7 @@
     },
     {
       "id": "arctis-nova-5-battery",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "developers": [
         "Doorham",
         "DRHW"
@@ -72,7 +72,7 @@
     },
     {
       "id": "software-environment-checker",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "developers": [
         "Althy",
         "DRHW"
@@ -80,7 +80,7 @@
     },
     {
       "id": "codex-environment-helper",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "developers": [
         "Althy",
         "DRHW"
@@ -88,7 +88,7 @@
     },
     {
       "id": "company-nas-remote-connect",
-      "version": "1.2.11",
+      "version": "1.2.12",
       "developers": [
         "Althy",
         "Doorham",
@@ -97,7 +97,7 @@
     },
     {
       "id": "company-network-drive-access",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "developers": [
         "Althy",
         "Doorham",
@@ -106,7 +106,7 @@
     },
     {
       "id": "wetype-awesun-bridge",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "developers": [
         "Althy",
         "DRHW"

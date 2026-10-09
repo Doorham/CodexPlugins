@@ -86,7 +86,7 @@ class UpdaterGitDiscoveryTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
             payload = json.loads(result.stdout.splitlines()[-1])
             self.assertTrue(payload["ok"])
-            self.assertEqual(payload["status"], "current")
+            self.assertEqual(payload["status"], "available")
             self.assertEqual(payload["source"], "GitHub")
 
 
