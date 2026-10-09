@@ -10,7 +10,7 @@ from core.tool_paths import TOOL_DATA_ROOT, legacy_runtime_roots
 
 
 APP_TITLE = "Codex工具箱网络版"
-APP_VERSION = "0.20.4"
+APP_VERSION = "0.20.10"
 MUTEX_NAME = r"Local\CompanyAIHelpers.CodexPluginStation"
 ROOT = Path(__file__).resolve().parent
 INSTANCE_VERSION_MARKER = TOOL_DATA_ROOT / "CodexTools" / "plugin-station-version.txt"
@@ -148,9 +148,14 @@ def main() -> int:
     global APP_WINDOW
 
     if legacy_runtime_roots():
-        from core.runtime_upgrade import UpgradeError, request_runtime_upgrade
+        from core.runtime_upgrade import PendingUpgradeError, UpgradeError, request_runtime_upgrade
         try:
-            request_runtime_upgrade(ROOT.parents[1])
+            try:
+                request_runtime_upgrade(ROOT.parents[1])
+            except PendingUpgradeError as exc:
+                if ctypes.windll.user32.MessageBoxW(None, str(exc), APP_TITLE, 0x34) != 6:
+                    return 0
+                request_runtime_upgrade(ROOT.parents[1], resume_pending=True)
             return 0
         except (UpgradeError, OSError) as exc:
             ctypes.windll.user32.MessageBoxW(None, str(exc), APP_TITLE, 0x30)

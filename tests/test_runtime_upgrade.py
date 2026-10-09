@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'apps/plugin-station'))
-from core.runtime_upgrade import UpgradeError, request_runtime_upgrade
+from core.runtime_upgrade import PendingUpgradeError, UpgradeError, request_runtime_upgrade
 
 PS = Path(os.environ.get('WINDIR', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
 
@@ -23,11 +23,21 @@ class RuntimeUpgradeTests(unittest.TestCase):
         (root / 'scripts').mkdir()
         shutil.copy2(ROOT / 'scripts/auto-migrate-runtime.ps1', root / 'scripts')
 
+    def accepted(self, repo, launch):
+        def wait(timeout):
+            self.assertEqual(timeout, 30)
+            state = json.loads((repo / '.runtime/runtime-upgrade/active.json').read_text())
+            (repo / '.runtime/runtime-upgrade' / (state['requestId'] + '.dispatch.json')).write_text(
+                json.dumps({'requestId': state['requestId'], 'state': 'dispatched'}))
+            return 0
+        launch.return_value.wait.side_effect = wait
+
     def test_dispatch_is_hidden_and_does_not_require_codex(self):
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder)
             self.fixture(repo)
             with patch('core.runtime_upgrade.subprocess.Popen') as launch:
+                self.accepted(repo, launch)
                 state = request_runtime_upgrade(repo, caller_pid=123)
                 args, kwargs = launch.call_args
                 self.assertIn('-Dispatch', args[0])
@@ -36,9 +46,51 @@ class RuntimeUpgradeTests(unittest.TestCase):
                 self.assertNotIn('PSModulePath', kwargs['env'])
                 self.assertNotIn('Codex.exe', str(args[0]))
                 self.assertTrue(kwargs['close_fds'])
+                self.assertEqual(kwargs['stdin'], subprocess.DEVNULL)
+                self.assertEqual(kwargs['stdout'], subprocess.DEVNULL)
+                self.assertEqual(kwargs['stderr'], subprocess.DEVNULL)
+                self.assertEqual(kwargs['creationflags'] & getattr(subprocess, 'DETACHED_PROCESS', 0), 0)
                 self.assertEqual(request_runtime_upgrade(repo), state)
                 self.assertEqual(launch.call_count, 1)
             self.assertFalse((repo / '.runtime/runtime-upgrade/dispatch.lock').exists())
+
+    def test_confirmed_stalled_pending_reuses_request_and_backup_only_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            self.fixture(repo)
+            destination = repo / '.runtime/runtime-upgrade'
+            destination.mkdir(parents=True)
+            state = {'requestId': uuid.uuid4().hex, 'state': 'pending', 'updatedAt': 0,
+                     'backupName': 'runtime-move-20000101-000000'}
+            (destination / 'active.json').write_text(json.dumps(state))
+            with patch('core.runtime_upgrade.subprocess.Popen') as launch:
+                with self.assertRaises(PendingUpgradeError):
+                    request_runtime_upgrade(repo)
+                launch.assert_not_called()
+                self.accepted(repo, launch)
+                resumed = request_runtime_upgrade(repo, resume_pending=True)
+                self.assertIn('-ResumePending', launch.call_args.args[0])
+                self.assertEqual(resumed['requestId'], state['requestId'])
+                self.assertEqual(resumed['backupName'], state['backupName'])
+                resumed['updatedAt'] = 0
+                (destination / 'active.json').write_text(json.dumps(resumed))
+                with self.assertRaises(UpgradeError):
+                    request_runtime_upgrade(repo, resume_pending=True)
+                self.assertEqual(launch.call_count, 1)
+
+    def test_unacknowledged_exit_and_timeout_do_not_claim_handoff_or_kill_worker(self):
+        for result in (0, 1, subprocess.TimeoutExpired('fixture', 30)):
+            with self.subTest(result=result), tempfile.TemporaryDirectory() as folder:
+                repo = Path(folder)
+                self.fixture(repo)
+                with patch('core.runtime_upgrade.subprocess.Popen') as launch:
+                    launch.return_value.wait.side_effect = result if isinstance(result, Exception) else None
+                    launch.return_value.wait.return_value = result
+                    with self.assertRaises(UpgradeError):
+                        request_runtime_upgrade(repo)
+                    launch.return_value.kill.assert_not_called()
+                    launch.return_value.terminate.assert_not_called()
+                self.assertEqual(json.loads((repo / '.runtime/runtime-upgrade/active.json').read_text())['state'], 'pending')
 
     def test_failures_and_stale_requests_never_automatically_loop(self):
         for phase, updated_at in [('failed', time.time()), ('pending', 0), ('running', 0)]:
@@ -108,6 +160,36 @@ class RuntimeUpgradeTests(unittest.TestCase):
                     self.assertEqual((other / 'settings.json').read_text(), '{"fixture":2}')
                 else:
                     self.assertEqual((other / 'settings.json').read_text(), '{"fixture":1}')
+
+    @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows PowerShell required')
+    def test_automatic_migration_refuses_live_legacy_helper_before_copying(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            self.fixture(repo)
+            local = repo / 'synthetic-local'
+            source = local / 'CompanyAIHelpers/UpdreamClipboardCleaner'
+            source.mkdir(parents=True)
+            (source / 'settings.json').write_text('{"fixture":1}')
+            body = (ROOT / 'scripts/migrate-workspace-runtime.ps1').read_text(encoding='utf-8-sig')
+            body = body.replace("$local = [Environment]::GetFolderPath('LocalApplicationData')",
+                                "$local = '" + str(local).replace("'", "''") + "'", 1)
+            body = body.replace("$ErrorActionPreference = 'Stop'", "$ErrorActionPreference = 'Stop'\n"
+                                "function Get-CimInstance { [pscustomobject]@{ExecutablePath='" +
+                                str(source / 'fixture.exe').replace("'", "''") + "';ProcessId=0} }\n"
+                                "function Stop-Process { throw 'Unexpected process termination' }\n"
+                                "function Stop-ScheduledTask { throw 'Unexpected task termination' }", 1)
+            script = repo / 'scripts/migrate-workspace-runtime.ps1'
+            script.write_text(body, encoding='utf-8-sig')
+            environment = dict(os.environ)
+            environment.pop('PSModulePath', None)
+            result = subprocess.run([str(PS), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+                                     '-Phase', 'Stage', '-NoForce', '-BackupName', 'runtime-move-20000101-000000'],
+                                    env=environment, capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 1)
+            failure = json.loads((repo / '.runtime/migration-backups/runtime-move-20000101-000000/failure.json').read_text(encoding='utf-8-sig'))
+            self.assertIn('Exit the legacy toolbox helpers normally', failure['error'])
+            self.assertFalse((repo / '.runtime/CompanyAIHelpers/UpdreamClipboardCleaner/settings.json').exists())
+            self.assertEqual((source / 'settings.json').read_text(), '{"fixture":1}')
 
     @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
     def test_owned_selector_accepts_venv_children_but_rejects_other_apps_and_sessions(self):
@@ -203,7 +285,7 @@ $f.Show();$f.Hide()
             state_path.write_text(json.dumps({'requestId': request_id, 'state': 'pending',
                                               'backupName': 'runtime-move-20000101-000000',
                                               'updatedAt': time.time()}), encoding='utf-8')
-            stub = """param([string]$Phase,[string]$BackupName)
+            stub = """param([string]$Phase,[string]$BackupName,[switch]$NoForce)
 $root=Split-Path -Parent $PSScriptRoot
 $backup=Join-Path $root ('.runtime\\migration-backups\\'+$BackupName)
 [IO.Directory]::CreateDirectory($backup) | Out-Null
@@ -241,6 +323,63 @@ exit 0
                       "try{$null=$f.GetTask('CompanyAIHelpers.RuntimeMigration.'+$sid+'." + request_id + "');exit 1}catch{exit 0}"
             check = subprocess.run([str(PS), '-NoProfile', '-Command', command], env=environment, capture_output=True, timeout=10)
             self.assertEqual(check.returncode, 0, 'Fixture worker left its temporary task behind')
+
+    @unittest.skipUnless(os.name == 'nt' and PS.exists(), 'Windows desktop scheduler required')
+    def test_real_pythonw_parent_waits_for_dispatch_before_exiting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            self.fixture(repo)
+            script = repo / 'scripts/auto-migrate-runtime.ps1'
+            script.write_text(script.read_text(encoding='utf-8-sig').replace(
+                '[switch]$NoLaunch, [switch]$NoDialog,', '[switch]$NoLaunch=$true, [switch]$NoDialog=$true,'),
+                encoding='utf-8-sig')
+            core = repo / 'apps/plugin-station/core'
+            core.mkdir(parents=True)
+            shutil.copy2(ROOT / 'apps/plugin-station/core/runtime_upgrade.py', core)
+            (repo / 'scripts/migrate-workspace-runtime.ps1').write_text("""param([string]$Phase,[string]$BackupName,[switch]$NoForce)
+if (-not $NoForce) {exit 2}
+$root=Split-Path -Parent $PSScriptRoot
+$backup=Join-Path $root ('.runtime\\migration-backups\\'+$BackupName)
+[IO.Directory]::CreateDirectory($backup)|Out-Null
+[IO.File]::WriteAllText((Join-Path $backup ($Phase+'.txt')),'fixture')
+if ($Phase -eq 'Finalize') {
+ [IO.File]::WriteAllText((Join-Path $backup 'result.json'),'{"phase":"complete","oldRootsRemain":0}')
+}
+""", encoding='utf-8-sig')
+            caller = repo / 'apps/plugin-station/app.py'
+            destination = repo / '.runtime/runtime-upgrade'
+            destination.mkdir(parents=True)
+            request_id = uuid.uuid4().hex
+            (destination / 'active.json').write_text(json.dumps({'requestId': request_id, 'state': 'pending',
+                'updatedAt': 0, 'backupName': 'runtime-move-20000101-000000'}))
+            caller.write_text("from pathlib import Path\nfrom core.runtime_upgrade import request_runtime_upgrade\n"
+                              "request_runtime_upgrade(Path(__file__).resolve().parents[2], resume_pending=True)\n", encoding='utf-8')
+            pythonw = ROOT / '.runtime/venv/Scripts/pythonw.exe'
+            self.assertTrue(pythonw.exists(), 'Regression requires a real Windows venv redirector')
+            environment = dict(os.environ)
+            environment.pop('PSModulePath', None)
+            parent = subprocess.Popen([str(pythonw), str(caller)], env=environment,
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.assertEqual(parent.wait(timeout=45), 0)
+            state_path = repo / '.runtime/runtime-upgrade/active.json'
+            deadline = time.monotonic() + 50
+            while time.monotonic() < deadline:
+                try:
+                    state = json.loads(state_path.read_text(encoding='utf-8-sig'))
+                except PermissionError:
+                    time.sleep(0.05)
+                    continue
+                if state['state'] in ('complete', 'failed'):
+                    break
+                time.sleep(0.2)
+            self.assertEqual(state['state'], 'complete', state)
+            self.assertEqual(state['requestId'], request_id)
+            self.assertEqual(state['backupName'], 'runtime-move-20000101-000000')
+            self.assertTrue((state_path.parent / (state['requestId'] + '.dispatch.json')).exists())
+            backup = repo / '.runtime/migration-backups' / state['backupName']
+            self.assertEqual((backup / 'Stage.txt').read_text(), 'fixture')
+            self.assertEqual((backup / 'Finalize.txt').read_text(), 'fixture')
+            time.sleep(1)  # The worker removes its own task in finally.
 
 
 if __name__ == '__main__':

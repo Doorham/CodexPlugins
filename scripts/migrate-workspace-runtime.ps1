@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([ValidateSet('Stage','Finalize')][string]$Phase = 'Stage', [string]$BackupName = '')
+param([ValidateSet('Stage','Finalize')][string]$Phase = 'Stage', [string]$BackupName = '', [switch]$NoForce)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -65,6 +65,27 @@ function Assert-OwnedSource($source) {
     }
 }
 foreach ($source in $sources) { Assert-OwnedSource $source }
+if ($NoForce) {
+    # Automatic migration never force-stops a helper. Refuse before copying or
+    # changing startup settings while any exact legacy executable is still live.
+    foreach ($process in (Get-CimInstance Win32_Process)) {
+        if (-not $process.ExecutablePath) { continue }
+        foreach ($source in $sources) {
+            if ($process.ExecutablePath.StartsWith($source.Path + '\',[StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Exit the legacy toolbox helpers normally, then contact maintenance to resume; originals are retained.'
+            }
+        }
+    }
+    $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $legacyRestoreTask = Get-ScheduledTask -TaskName ('CompanyAIHelpers.NasSavedMappings.' + $userSid) -ErrorAction SilentlyContinue
+    $legacyRestoreRun = Get-ItemPropertyValue -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'CompanyAIHelpers.NasSavedMappings' -ErrorAction SilentlyContinue
+    foreach ($source in $sources) {
+        $references = @($legacyRestoreRun) + @($legacyRestoreTask.Actions | ForEach-Object { $_.Execute })
+        if (@($references | Where-Object { $_ -and $_.IndexOf($source.Path + '\',[StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count) {
+            throw 'Legacy NAS startup requires maintenance; migration retained originals without stopping its task.'
+        }
+    }
+}
 function Get-DataHash([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -136,7 +157,7 @@ if ($priorTask) {
     [xml]$taskXml = Export-ScheduledTask -TaskName $nasTaskName
     if ($taskXml.Task.RegistrationInfo.Source -ne 'CompanyAIHelpers.NasSavedMappings/v1') { throw 'Unowned NAS task.' }
     $taskXml.Save((Join-Path $backupRoot 'nas-task-before.xml'))
-    Stop-ScheduledTask -TaskName $nasTaskName
+    if (-not $NoForce) { Stop-ScheduledTask -TaskName $nasTaskName }
 }
 $running = @()
 foreach ($process in (Get-CimInstance Win32_Process)) {
@@ -145,6 +166,7 @@ foreach ($process in (Get-CimInstance Win32_Process)) {
         if ($process.ExecutablePath.StartsWith($source.Path + '\',[StringComparison]::OrdinalIgnoreCase)) {
             $relative = $process.ExecutablePath.Substring($source.Path.Length + 1)
             if (($relative -split '\\')[0] -notin $allowed) { throw 'Unknown executable in source.' }
+            if ($NoForce) { throw 'A legacy helper restarted; migration stopped without terminating it.' }
             $running += [pscustomobject]@{Id=$process.ProcessId; Relative=$relative}
             # Stop-ScheduledTask may have already terminated this same worker.
             # Suppress only that benign exit race, not an actual stop failure.
@@ -239,7 +261,7 @@ foreach ($folder in $startupSources | Select-Object -Unique) {
 
 # Preserve an existing opt-in; migration must not enable NAS restore for a
 # machine that never requested it (including installations without activation).
-if ($priorRestoreEnabled) {
+if ($priorRestoreEnabled -and -not $NoForce) {
     $python = Join-Path $repoRoot '.runtime\venv\Scripts\python.exe'
     $payload = & $python -c "import sys;sys.path.insert(0,r'apps/plugin-station');from core.company_access import CompanyAccess;a=CompanyAccess();assert a.active();a.refresh_connector();assert a.active();print(a.payload_root())"
     if ($LASTEXITCODE -ne 0 -or -not $payload) { throw 'Migrated activation validation failed.' }

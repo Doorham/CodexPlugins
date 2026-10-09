@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param([switch]$Dispatch, [Parameter(Mandatory=$true)][string]$RequestId,
-      [switch]$NoLaunch, [switch]$NoDialog)
+      [switch]$NoLaunch, [switch]$NoDialog, [switch]$ResumePending)
 
 $ErrorActionPreference = 'Stop'
 if ($RequestId -notmatch '^[a-f0-9]{32}$') { throw 'Invalid upgrade request.' }
@@ -30,6 +30,7 @@ if ($NoLaunch) { $workerArguments += ' -NoLaunch' }
 if ($NoDialog) { $workerArguments += ' -NoDialog' }
 $form = $null
 $taskFolder = $null
+$mayWriteFailure = $false
 function Save-State([string]$Phase) {
     $actual = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
     if ($actual.requestId -ne $RequestId) { throw 'Upgrade ownership changed.' }
@@ -78,6 +79,17 @@ try {
     $scheduler.Connect()
     $taskFolder = $scheduler.GetFolder('\')
     if ($Dispatch) {
+        if ($state.state -ne 'pending') { throw 'Upgrade is not pending.' }
+        # Never replace a task or race a worker from an earlier handoff. A
+        # desktop-confirmed retry reuses the same request and backup exactly once.
+        $existing = @($taskFolder.GetTasks(1) | Where-Object { $_.Name -eq $taskName })
+        if ($existing.Count) { throw 'Upgrade task already exists; retained for maintenance.' }
+        $workerPattern = [regex]::Escape($PSCommandPath) + '"?\s+-RequestId\s+' + $RequestId + '(?:\s|$)'
+        if (@(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object {
+            $_.ProcessId -ne $PID -and $_.CommandLine -match $workerPattern
+        }).Count) { throw 'Upgrade worker already exists.' }
+        if ($ResumePending -and -not $state.resumeAttemptedAt) { throw 'Resume was not confirmed.' }
+        $mayWriteFailure = $true
         # A one-shot interactive-user task escapes a packaged caller's AppData
         # virtualization. No password, SYSTEM account, elevation or Codex needed.
         $definition = $scheduler.NewTask(0)
@@ -96,9 +108,13 @@ try {
         $action.WorkingDirectory = $repoRoot
         $task = $taskFolder.RegisterTaskDefinition($taskName,$definition,2,$sid,$null,3,$null)
         $task.Run($null) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $folder ($RequestId + '.dispatch.json')),
+            ([pscustomobject]@{requestId=$RequestId;state='dispatched';acceptedAt=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()} |
+                ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
         exit 0
     }
     if ($state.state -ne 'pending') { throw 'Upgrade is not pending.' }
+    $mayWriteFailure = $true
     Save-State 'running'
     if (-not $NoDialog) {
         Add-Type -AssemblyName System.Windows.Forms
@@ -153,7 +169,7 @@ public static class ToolboxUpgradeWindows {
     foreach ($phase in 'Stage','Finalize') {
         $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
             (Join-Path $PSScriptRoot 'migrate-workspace-runtime.ps1') + '" -Phase ' + $phase +
-            ' -BackupName ' + $state.backupName
+            ' -BackupName ' + $state.backupName + ' -NoForce'
         $process = Start-Process -FilePath $powershell -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
         while (-not $process.HasExited) {
             if ($form) { [Windows.Forms.Application]::DoEvents() }
@@ -170,8 +186,8 @@ public static class ToolboxUpgradeWindows {
         Start-Process -FilePath (Join-Path $env:WINDIR 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $repoRoot 'start-plugin-station.vbs') + '"') -WorkingDirectory $repoRoot -WindowStyle Hidden
     }
 } catch {
-    try { Save-State 'failed' } catch { }
-    Show-Failure
+    if ($mayWriteFailure) { try { Save-State 'failed' } catch { } }
+    if (-not $Dispatch) { Show-Failure }
     exit 1
 } finally {
     if ($form) { $form.Dispose() }
