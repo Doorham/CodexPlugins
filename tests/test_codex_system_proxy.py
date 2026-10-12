@@ -43,7 +43,7 @@ class CodexSystemProxyTests(unittest.TestCase):
             and any(isinstance(target, ast.Name) and target.id == "APP_VERSION" for target in node.targets)
         )
         self.assertEqual(release["version"], app_version)
-        self.assertEqual(self.plugin["moduleVersion"], "1.1.2")
+        self.assertEqual(self.plugin["moduleVersion"], "1.1.3")
         self.assertEqual(self.plugin["name"], "Codex 对话 timeout 修复")
         self.assertEqual(self.plugin["developers"], ["Althy", "DRHW"])
         self.assertEqual(module["version"], self.plugin["moduleVersion"])
@@ -156,12 +156,12 @@ class CodexSystemProxyTests(unittest.TestCase):
         status = self._plugin_status(configured=False)
         self.assertEqual(status["statusText"], "待配置")
         self.assertFalse(status["running"])
-        self.assertEqual(status["actions"], [{"id": "repair", "label": "配置系统代理", "kind": "primary"}])
+        self.assertEqual([a["id"] for a in status["actions"]], ["repair", "refresh"])
 
     def test_configured_state_disables_repair_and_keeps_diagnostic(self) -> None:
         status = self._plugin_status(configured=True)
-        self.assertEqual(status["statusText"], "已配置")
-        self.assertTrue(status["running"])
+        self.assertEqual(status["statusText"], "已配置 · 未检测")
+        self.assertFalse(status["running"])
         self.assertEqual([item["label"] for item in status["actions"]], ["已配置", "检测连接"])
         self.assertTrue(status["actions"][0]["disabled"])
 
@@ -193,6 +193,72 @@ class CodexSystemProxyTests(unittest.TestCase):
                 "core.codex_system_proxy.shutil.which", return_value=r"C:\Program Files\WindowsApps\OpenAI.Codex\codex.exe"
             ):
                 self.assertEqual(find_codex_cli(), local)
+
+    def test_diagnostic_schema_failure_does_not_claim_network_failure(self) -> None:
+        for payload in ['not json', '{}', '{"checks":null}', '{"checks":{"network.websocket_reachability":[]}}']:
+            result = diagnose_websocket(cli=Path('codex.exe'), runner=lambda *a, **k: subprocess.CompletedProcess(a[0], 2, payload, 'secret'))
+            self.assertEqual(result['state'], 'diagnostic_error')
+            self.assertNotIn('secret', json.dumps(result))
+        status = self._plugin_status(configured=True, diagnostic=result)
+        self.assertEqual(status['statusText'], '诊断不可用 · 连接未知')
+
+    def test_list_checks_and_failure_http_code_are_supported_without_private_text(self) -> None:
+        report = {'checks': [{'id': 'network.websocket_reachability', 'status': 'error',
+                             'summary': 'private secret', 'details': {'handshake result': 'HTTP 403 private secret'}}]}
+        result = diagnose_websocket(cli=Path('codex.exe'), runner=lambda *a, **k: subprocess.CompletedProcess(a[0], 1, json.dumps(report), 'secret'))
+        self.assertEqual(result['state'], 'connection_failed')
+        self.assertEqual(result['reason'], 'http_403')
+        self.assertNotIn('secret', json.dumps(result))
+
+    def test_timeout_and_unsupported_doctor_are_distinct(self) -> None:
+        def timed_out(*args, **kwargs):
+            raise subprocess.TimeoutExpired(args[0], 35, output='private')
+        result = diagnose_websocket(cli=Path('codex.exe'), runner=timed_out)
+        self.assertEqual(result['reason'], 'doctor_timeout')
+        result = diagnose_websocket(cli=Path('codex.exe'), runner=lambda *a, **k: subprocess.CompletedProcess(a[0], 2, '', "unrecognized subcommand 'doctor' private"))
+        self.assertEqual(result['reason'], 'doctor_unsupported')
+        self.assertNotIn('private', json.dumps(result))
+
+    def test_refresh_does_not_require_or_write_configuration(self) -> None:
+        service = ControlService.__new__(ControlService)
+        diagnostic = {'ok': True, 'message': 'WebSocket 检测通过'}
+        with mock.patch('core.control.ensure_system_proxy_feature') as write, mock.patch('core.control.diagnose_websocket', return_value=diagnostic):
+            result = service._codex_proxy_action({}, 'refresh')
+        write.assert_not_called()
+        self.assertFalse(result['restartRequired'])
+
+    def test_running_runtime_precedes_cached_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            running = Path(folder) / 'OpenAI/Codex/bin/running/codex.exe'
+            stale = Path(folder) / 'OpenAI/Codex/bin/stale/codex.exe'
+            for path in [running, stale]:
+                path.parent.mkdir(parents=True)
+                path.write_bytes(b'test')
+            with mock.patch.dict('os.environ', {'LOCALAPPDATA': folder, 'CODEX_CLI_PATH': ''}), mock.patch('core.codex_system_proxy.subprocess.run', return_value=subprocess.CompletedProcess([], 0, str(running), '')):
+                self.assertEqual(find_codex_cli(), running)
+
+    def test_configuration_waits_for_other_process_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / 'config.toml'
+            config.write_text('model = "fixture"\n', encoding='utf-8')
+            code = '''import sys,time
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from core.config_transaction import config_lock
+with config_lock(Path(sys.argv[2])):
+    print('locked',flush=True)
+    time.sleep(.5)
+'''
+            child = subprocess.Popen([sys.executable, '-c', code, str(APP_ROOT), str(config)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), 'locked')
+                result = ensure_system_proxy_feature(config=config, backup_root=Path(folder)/'backup')
+                self.assertTrue(result['changed'])
+                _, errors = child.communicate(timeout=10)
+                self.assertEqual(child.returncode, 0, errors)
+                self.assertTrue(config_status(config)['configured'])
+            finally:
+                child.wait(timeout=10)
 
     def test_bootstrap_update_and_startup_keep_feature_enabled(self) -> None:
         bootstrap = (REPO_ROOT / "scripts" / "bootstrap.ps1").read_text(encoding="utf-8")

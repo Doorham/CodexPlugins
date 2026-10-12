@@ -1,12 +1,12 @@
 {
   "id": "codex-system-proxy",
   "name": "Codex 对话 timeout 修复",
-  "moduleVersion": "1.1.2",
+  "moduleVersion": "1.1.3",
   "developers": [
     "Althy",
     "DRHW"
   ],
-  "description": "修复 Codex 未遵循 Windows 系统代理这一类 timeout，并独立检测 WebSocket。已配置时不再重复显示修复按钮；代理线路异常需要单独排查。",
+  "description": "配置 Codex 系统代理开关，分别显示未检测、WebSocket 连通、连接失败与诊断不可用；不将所有 timeout 归因于代理。",
   "category": "系统",
   "icon": "↗",
   "accent": "#22c55e",

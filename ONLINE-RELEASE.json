@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "edition": "online",
-  "version": "0.20.15",
+  "version": "0.20.16",
   "license": "Apache-2.0",
   "developers": [
     "Doorham",
@@ -29,7 +29,7 @@
     },
     {
       "id": "codex-system-proxy",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "developers": [
         "Althy",
         "DRHW"

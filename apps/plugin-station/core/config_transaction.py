@@ -13,12 +13,14 @@ from pathlib import Path
 def config_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.with_name(path.name + '.codextools.lock').open('a+b') as stream:
-        stream.seek(0)
-        if not stream.read(1):
-            stream.write(b'0'); stream.flush()
         deadline = time.monotonic() + 15
         while True:
             try:
+                # Windows denies reads of another process's locked byte.
+                # Initialize without reading it, within the same retry loop.
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b'0'); stream.flush()
                 stream.seek(0)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
                 break

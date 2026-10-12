@@ -59,7 +59,7 @@ def config_status(config: Path | None = None) -> dict[str, Any]:
         "configured": value is True,
         "conflict": False,
         "value": value,
-        "message": "Codex 已遵循 Windows 系统代理" if value is True else "Codex 尚未遵循 Windows 系统代理",
+        "message": "系统代理开关已配置（连接需单独检测）" if value is True else "系统代理开关尚未配置",
     }
 
 
@@ -146,7 +146,7 @@ def _ensure_system_proxy_feature(
     except tomllib.TOMLDecodeError as exc:
         raise ValueError(f"Codex config.toml 不是有效 TOML：{exc}") from exc
     if updated == original:
-        return {"changed": False, "backup": None, "message": "Codex 已遵循 Windows 系统代理"}
+        return {"changed": False, "backup": None, "message": "系统代理开关已配置（连接需单独检测）"}
     verified_parsed = tomllib.loads(updated)
     if verified_parsed.get("features", {}).get(FEATURE_NAME) is not True:
         raise ValueError("无法安全写入 respect_system_proxy，已保持原文件不变")
@@ -170,7 +170,7 @@ def _ensure_system_proxy_feature(
     return {
         "changed": True,
         "backup": str(backup) if backup else None,
-        "message": "已让 Codex WebSocket 从第一次连接开始遵循 Windows 系统代理",
+        "message": "系统代理开关已写入；请完全退出并重开 Codex，连接需单独检测",
     }
 
 
@@ -197,6 +197,18 @@ def find_codex_cli() -> Path | None:
     if explicit:
         candidates.append(Path(explicit))
     local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    # Prefer the running desktop runtime over obsolete cached binaries.
+    try:
+        running = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             "Get-Process codex -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -Unique"],
+            capture_output=True, text=True, timeout=5, creationflags=CREATE_NO_WINDOW,
+        )
+        runtime_root = local_app_data / "OpenAI" / "Codex" / "bin"
+        candidates.extend(Path(line.strip()) for line in running.stdout.splitlines()
+                          if line.strip() and Path(line.strip()).is_relative_to(runtime_root))
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     bundled_root = local_app_data / "OpenAI" / "Codex" / "bin"
     if bundled_root.is_dir():
         candidates.extend(sorted(bundled_root.glob("*/codex.exe"), key=lambda item: item.stat().st_mtime, reverse=True))
@@ -220,7 +232,7 @@ def diagnose_websocket(
 ) -> dict[str, Any]:
     executable = cli or find_codex_cli()
     if executable is None:
-        return {"available": False, "ok": False, "message": "未找到 Codex 自带诊断程序"}
+        return {"available": False, "ok": False, "state": "diagnostic_error", "reason": "cli_missing", "message": "未找到 Codex 自带诊断程序；连接状态未知"}
     try:
         result = runner(
             [str(executable), "doctor", "--json"],
@@ -232,20 +244,51 @@ def diagnose_websocket(
             creationflags=CREATE_NO_WINDOW,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"available": True, "ok": False, "message": f"Codex WebSocket 诊断未完成：{exc}"}
+        reason = "doctor_timeout" if isinstance(exc, subprocess.TimeoutExpired) else "doctor_launch_failed"
+        return {"available": True, "ok": False, "state": "diagnostic_error", "reason": reason,
+                "message": f"诊断程序未完成（{reason}）；连接状态未知"}
     try:
         report = json.loads(result.stdout)
-        check = report["checks"]["network.websocket_reachability"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        return {"available": True, "ok": False, "message": f"Codex 诊断结果无法解析：{exc}"}
-    details = check.get("details", {}) if isinstance(check, dict) else {}
+        checks = report["checks"]
+        check = (checks.get("network.websocket_reachability") if isinstance(checks, dict)
+                 else next((item for item in checks if isinstance(item, dict) and item.get("id") == "network.websocket_reachability"), None)
+                 if isinstance(checks, list) else None)
+        if not isinstance(check, dict) or check.get("status") not in {"ok", "error", "warn", "warning", "failed"}:
+            raise ValueError("missing or unsupported websocket check")
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        unsupported = "unrecognized subcommand" in result.stderr.lower() or "unexpected argument" in result.stderr.lower()
+        reason = "doctor_unsupported" if unsupported else "doctor_schema"
+        return {"available": True, "ok": False, "state": "diagnostic_error", "reason": reason,
+                "exitCode": result.returncode, "message": f"诊断程序不兼容（{reason}，退出码 {result.returncode}）；连接状态未知"}
+    details = check.get("details", {})
+    if not isinstance(details, dict):
+        details = {}
     ok = check.get("status") == "ok"
+    handshake = str(details.get("handshake result", ""))
+    # Do not forward free text from a future doctor schema (URLs, tokens, etc.).
+    http_code = re.search(r"\bHTTP\s+(\d{3})\b", handshake)
+    code = http_code.group(1) if http_code else None
+    reason = f"http_{code}" if code else "websocket_check_failed"
+    if not ok and not code:
+        failure_text = (handshake + " " + str(check.get("summary", ""))).lower()
+        for label, markers in [
+            ("connect_timeout", ("timed out", "timeout")),
+            ("dns_error", ("dns", "resolve", "name resolution")),
+            ("tls_error", ("tls", "certificate", "ssl")),
+            ("proxy_error", ("proxy", "tunnel")),
+            ("connect_error", ("refused", "reset", "unreachable")),
+        ]:
+            if any(marker in failure_text for marker in markers):
+                reason = label
+                break
     return {
         "available": True,
         "ok": ok,
+        "state": "connected" if ok else "connection_failed",
+        "reason": None if ok else reason,
+        "exitCode": result.returncode,
         "status": check.get("status"),
-        "summary": check.get("summary", ""),
-        "handshake": details.get("handshake result"),
+        "handshake": "HTTP 101 Switching Protocols" if code == "101" else f"HTTP {code}" if code else None,
         "durationMs": check.get("durationMs"),
-        "message": "WebSocket 握手成功（HTTP 101）" if ok else "WebSocket 仍未连接成功",
+        "message": "WebSocket 握手成功（HTTP 101）" if ok and code == "101" else "WebSocket 检测通过" if ok else f"WebSocket 检测失败（{reason}）",
     }

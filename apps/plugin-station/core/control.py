@@ -364,7 +364,7 @@ class ControlService:
             "ok": True,
             "app": {
                 "name": "Codex插件站",
-                "version": "0.20.15",
+                "version": "0.20.16",
                 "developers": ["Doorham", "XY", "Althy", "Oreo"],
                 "pluginCount": len(cards),
             },
@@ -1111,21 +1111,21 @@ class ControlService:
             if diagnostic.get("ok"):
                 duration = diagnostic.get("durationMs")
                 suffix = f" · {duration / 1000:.2f} 秒" if isinstance(duration, (int, float)) else ""
-                detail_lines.append(f"WebSocket：HTTP 101 连接成功{suffix}")
+                detail_lines.append(f"WebSocket：{diagnostic.get('message', '检测通过')}{suffix}")
             else:
                 detail_lines.append(f"WebSocket：{diagnostic.get('message', '检测失败')}")
         else:
             detail_lines.append(
                 "WebSocket：点击“检测连接”进行实时验证"
-                if configured else "WebSocket：配置系统代理后才能检测"
             )
-        verified = diagnostic is None or bool(diagnostic.get("ok"))
+        verified = bool(diagnostic and diagnostic.get("ok"))
         if conflict:
             status_text = "配置异常"
             actions = [{"id": "repair", "label": "配置异常", "kind": "primary", "disabled": True}]
         elif not configured:
             status_text = "待配置"
-            actions = [{"id": "repair", "label": "配置系统代理", "kind": "primary"}]
+            actions = [{"id": "repair", "label": "配置系统代理", "kind": "primary"},
+                       {"id": "refresh", "label": "检测连接", "kind": "secondary"}]
         else:
             actions = [
                 {"id": "repair", "label": "已配置", "kind": "primary", "disabled": True},
@@ -1134,9 +1134,11 @@ class ControlService:
             if not system_proxy_enabled:
                 status_text = "已配置 · 系统代理未开启"
             elif diagnostic is None:
-                status_text = "已配置"
+                status_text = "已配置 · 未检测"
             elif diagnostic.get("ok"):
                 status_text = "连接正常"
+            elif diagnostic.get("state") == "diagnostic_error":
+                status_text = "诊断不可用 · 连接未知"
             else:
                 status_text = "连接检测失败"
         return {
@@ -1155,10 +1157,6 @@ class ControlService:
             record_folder = expand_path(plugin["recordFolder"])
             result = ensure_system_proxy_feature(backup_root=record_folder / "Backups")
         elif action == "refresh":
-            status = codex_proxy_config_status()
-            if not status.get("configured"):
-                self._codex_proxy_diagnostic = None
-                raise RuntimeError("Codex 尚未遵循系统代理，请先点击“配置系统代理”")
             result = {"changed": False, "backup": None}
         else:
             raise ValueError(f"不支持的动作：{action}")
@@ -1167,16 +1165,16 @@ class ControlService:
         if not self._codex_proxy_diagnostic.get("ok"):
             message = self._codex_proxy_diagnostic.get("message", "WebSocket 检测失败")
             if action == "repair":
-                raise RuntimeError(f"系统代理功能已配置，但 {message}；重复配置不能修复代理线路")
+                raise RuntimeError(f"系统代理开关已配置；{message}。配置写入不代表当前 Codex 会话已生效")
             raise RuntimeError(message)
         return {
             "message": (
-                "系统代理功能已配置，WebSocket 检测通过（HTTP 101）"
+                f"系统代理开关已配置；{self._codex_proxy_diagnostic['message']}。配置改变后请完全退出并重开 Codex"
                 if action == "repair"
-                else "WebSocket 检测通过（HTTP 101）"
+                else self._codex_proxy_diagnostic["message"]
             ),
             "configBackup": result.get("backup"),
-            "restartRequired": False,
+            "restartRequired": bool(result.get("changed")),
             "diagnostic": self._codex_proxy_diagnostic,
         }
 
