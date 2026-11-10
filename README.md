@@ -1,131 +1,27 @@
-# CodexPlugins
+# CodexTools · 正式安装版
 
-面向 Windows 的开源本地插件库，把常用的 Codex 网络优化、创作辅助、完成提醒和硬件状态功能集中到一个可视化插件站中。所有公共功能都随源码发布，可在本机审计、构建、启停和更新。
+Windows 上的 Codex 工具箱。当前版本 **0.32.30**，UpdreamBridge **1.4.0**。
 
-## 主要功能
+## 下载与更新
 
-| 插件 | 解决的问题 | 主要特点 |
-| --- | --- | --- |
-| UpdreamBridge 图片生成 | 在 Codex 中调用 UpDream 生图 | 内置 Agent 动作、登录配置和分步指引；支持文字、参考图及悠船 Midjourney，不依赖独立 Skill |
-| Codex 对话 timeout 修复 | Codex 首次建立 Responses WebSocket 时未正确使用 Windows 系统代理 | 仅在缺少配置时修正，已配置后独立检测握手，不把线路异常误报为配置问题 |
-| 国内网站直连 | 开启系统代理后，常用国内网站出现不必要的绕路 | 管理 Windows 直连规则，可与 Clash Verge Rev 的绕过项安全同步 |
-| Updream 剪贴板清理 | 从 Updream 画布复制的图片会让 Photoshop 获得焦点时直接报错 | 仅发布一个标准 24 位位图格式，避免 Photoshop 主动探测不兼容表示，不保存剪贴板历史 |
-| 任务完成提示音 | 后台等待 Codex 或 WorkBuddy 工作时容易错过完成时机 | 两个 Agent 共用同一声音配置；支持 WAV、MP3、WMA，失败时回退到系统提示音 |
-| Arctis Nova 5 电量监控 | Windows 缺少直观的耳机电量显示 | 检测 USB 接收器、显示托盘电量、区分耳机离线和监控未启用 |
-| 软件安装检查 | 不确定电脑是否具备最低开发条件 | 只读检查开发工具、Python 真实能力及编辑器集成 |
-| Codex 环境补全 | 常用终端、多媒体和 Python 工具缺失或配置不完整 | 检测后按确认补全可安全处理的项目，UTF-8 支持备份与恢复 |
+**[下载正式安装包](https://github.com/Doorham/CodexPlugins/releases/latest)**
 
-更详细的行为和安全边界见 [全部功能说明](docs/FEATURES.md)。
+下载 `CodexTools-Setup-0.32.30.exe`，双击安装或更新。工具箱无需自行克隆源码、配置Python环境或编译；使用Windows 10/11，界面需要Microsoft Edge WebView2 Runtime。
 
-## 设计原则
+这次先更新工具箱，再在“本机”页更新UpdreamBridge至1.4.0；未装的从“插件中心”安装。UDB模型、图片／视频校验和第三方接口归插件，后续同协议业务变更只更新插件。原有登录、配置与任务记录保留。
 
-- **本地优先**：私人插件、自定义白名单、提示音和配置备份只保存在当前电脑。
-- **源码交付**：仓库不携带 EXE、DLL、压缩包或来历不明的第三方二进制；助手由安装电脑从源码构建。
-- **安全更新**：只从 GitHub `origin/main` 获取更新，仅允许快进，不覆盖本地改动或自动合并分叉历史。
-- **最小权限**：不读取账号密码、Token、代理订阅、节点或对话正文，也不关闭或切换 VPN 和代理软件。
-- **独立运行**：不依赖公司网络盘、共享路径或内网服务。
-- **路径独立**：工具箱程序、私人配置和缓存统一位于当前克隆的 `.runtime/CompanyAIHelpers`，不进入 Codex 应用目录或缓存，且不提交。
+[本版更新说明](RELEASE-NOTES.md) · [插件库](https://github.com/Doorham/CodexTools-Plugins)
 
-## 系统要求
+## 主要能力
 
-- Windows 10 或 Windows 11
-- Python 3.11 或更高版本
-- Git for Windows
-- Microsoft Edge WebView2 Runtime（Windows 通常已预装）
-- 使用 UpdreamBridge 配置窗口还需 .NET 8 桌面运行时；从源码构建该窗口需 .NET SDK 8 或更高版本
-- 能访问 GitHub 和 Python 包索引的网络
+插件中心按需安装和更新，包含语音监听、完成提示音、环境检测、图片／视频创作等工具。UDB收录绘梦2.1及原图片模型，并支持Seedance2.5、Seedance2.0和Wan3.0对应的视频模式。第三方生成服务按其自身账号、额度与计费规则使用。
 
-## 安装
+程序、插件和个人状态保存在本机 `%LOCALAPPDATA%\CodexTools`，插件更新不要求重新登录；本仓库和安装包不包含个人登录数据。
 
-在 PowerShell 中执行：
+## 旧散装版
 
-```powershell
-New-Item -ItemType Directory -Path C:\Works -Force
-git clone https://github.com/Doorham/CodexPlugins.git C:\Works\CodexPlugins
-Set-Location C:\Works\CodexPlugins
-.\scripts\bootstrap.ps1
-.\scripts\build-helpers.ps1
-.\scripts\install-desktop-shortcut.ps1
-```
+此仓库现用入口已转为正式安装版分发。旧散装源码及启动方法保存在[历史分支](https://github.com/Doorham/CodexPlugins/tree/legacy/scattered-toolbox)，旧提交和版本标签保留。
 
-安装完成后，双击桌面的“Codex工具箱”快捷方式，或运行：
+GitHub的“Download ZIP / Source code”是发布说明，不是安装包；请下载Release里的Setup。散装版用户先退出旧程序，再安装正式版；旧目录和其中的私人状态不会被安装器删除或自动迁移。
 
-```powershell
-.\start-plugin-station.vbs
-```
-
-公开仓库的 clone 和 pull 不要求 GitHub 登录。只有参与开发并推送代码时，才需要使用自己的 Git Credential Manager 或 SSH 身份。
-
-## 更新
-
-普通用户通过现有快捷方式／VBS 正常打开工具箱就会自动检查并应用更新，“检查更新”是备用按钮，不需要 PowerShell 命令或 Codex 对话。离线保留原版，下次打开再检查。0.20.1 起，启动器发现旧数据时会自动启动独立后台 PowerShell：备份、迁移、验证后重开工具箱；0.20.2 兼容已隐藏的旧窗口。只需等待一次升级提示，不要求 Windows 密码，不停止 Codex 或 Tailscale；失败保留数据并提示联系维护人员，不循环重试或创建空白配置。
-
-以下是维护者的备用步骤，不是普通用户更新的必需操作。先把源码安全更新到含迁移脚本的新版：
-
-在旧工具箱“⋯ → 完全退出”中确认退出（× 仅隐藏），从 Windows 开始菜单打开普通权限 PowerShell（不要使用 Codex 内的终端），进入本机克隆目录执行：
-
-```powershell
-$migrationName = 'runtime-move-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
-.\scripts\migrate-workspace-runtime.ps1 -Phase Stage -BackupName $migrationName
-if ($LASTEXITCODE -ne 0) { throw '备份失败，请保留旧目录。' }
-.\scripts\migrate-workspace-runtime.ps1 -Phase Finalize -BackupName $migrationName
-if ($LASTEXITCODE -ne 0) { throw '迁移失败，请保留备份。' }
-.\start-plugin-station.vbs
-```
-
-原件与启动项备份留在 `.runtime/migration-backups`。迁移拒绝未知文件和重解析点，不移动 Windows 凭据、Tailscale 登录或 Codex 自身数据，不启用原先关闭的 NAS 自动恢复。
-
-正常启动时会检查 GitHub 更新。也可以在仓库根目录手动执行：
-
-```powershell
-# 只检查
-.\scripts\update-from-origin.ps1 -Mode Check
-
-# 安全快进到最新版
-.\scripts\update-from-origin.ps1 -Mode Apply
-```
-
-检测到本地改动、开发分支或分叉历史时，更新器会停止并保留现场。
-
-## 安全与隐私
-
-本项目明确不包含：
-
-- 网络驱动器映射、公司共享路径或内网端点管理功能
-- Logitech G435 外部 DLL 功能
-- GitHub 凭据、代理订阅、节点、控制密钥或私人白名单
-- 私人插件、对话正文、日志、诊断数据库或 `.codex` 目录
-- 本机构建产物、虚拟环境和缓存
-
-完整规则见 [安全与隐私边界](docs/SECURITY-PRIVACY.md)。
-
-## 中文文档
-
-- [文档导航](docs/README.md)
-- [安装与首次启动](docs/INSTALLATION.md)
-- [界面与日常使用](docs/USER-GUIDE.md)
-- [全部功能说明](docs/FEATURES.md)
-- [GitHub 更新与外网电脑同步](docs/UPDATING.md)
-- [安全与隐私边界](docs/SECURITY-PRIVACY.md)
-- [常见问题与故障排查](docs/TROUBLESHOOTING.md)
-
-## 开发与测试
-
-```powershell
-python -m unittest discover -s tests -v
-git diff --check
-```
-
-发布边界和模块版本以 [ONLINE-RELEASE.json](ONLINE-RELEASE.json) 为准，维护记录见 [开发日志](docs/DEVLOG.md)。
-
-## 开源许可证
-
-本项目采用 [Apache License 2.0](LICENSE) 开源。使用、修改和分发时请遵守许可证条款；许可证不授予项目名称或商标的额外使用权。
-环境工具内嵌的 Microsoft Fluent Emoji 月相图采用 MIT License，完整归属与许可文本见
-[第三方许可说明](helpers/environment-detector/THIRD-PARTY-NOTICES.md)。
-
-## 公司可选模块（0.17.1 起）
-
-两个公司模块默认隐藏。0.17.3 起，点击工具箱顶部的“导入 JSON”，选择公司内部提供的引导文件副本，即可在当前窗口启用两个模块；无需 PowerShell 或重新启动。
-
-引导文件含内部连接配置，不要提交到此仓库。取消或无效文件不改变原配置；成功导入不会自动连接。随后进入“公司模块”，由用户点击连接并完成官方 Tailscale 授权和两台 NAS 的凭据确认。不会覆盖已有不同目标的盘符，不保存密码。详细说明见 [公司模块导入](docs/COMPANY-MODULES.md)。
+维护：Althy、DRHW、Codex；保留Doorham及历史贡献者署名。自有项目许可见[LICENSE](LICENSE)。

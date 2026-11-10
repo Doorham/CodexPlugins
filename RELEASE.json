@@ -1,0 +1,17 @@
+{
+  "product": "CodexTools",
+  "version": "0.32.30",
+  "udbVersion": "1.4.0",
+  "setup": {
+    "file": "CodexTools-Setup-0.32.30.exe",
+    "sha256": "7182107c0b17eaa98a965458e7a2a19953e6a18ad72f7fe91f195b7e25c33b47",
+    "bytes": 19361830
+  },
+  "plugin": {
+    "file": "UpdreamBridge-1.4.0.zip",
+    "sha256": "a5b5a3e493bb3797846555378474fe1165123eeb5422da4ec67f612b2651fdc1",
+    "bytes": 11576043
+  },
+  "release": "https://github.com/Doorham/CodexPlugins/releases/tag/toolbox-v0.32.30",
+  "legacyBranch": "legacy/scattered-toolbox"
+}

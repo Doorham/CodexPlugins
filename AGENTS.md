@@ -1,13 +1,6 @@
-# Repository instructions
+# Release repository instructions
 
-- 本仓库是 CodexTools 网络版，只从 GitHub `origin/main` 更新，不读取或依赖公司网络盘。
-- 版本与模块边界以 `ONLINE-RELEASE.json` 为准；每次实质改动在 `docs/DEVLOG.md` 顶部记录开发者、验证和未解决项。
-- 不得加入公司内网 IP、共享名、映射盘、Y 盘路径、内部交接文件或提升授权记录。
-- 不得加入账号、Token、密钥、Cookie、对话正文、日志、诊断数据库、代理订阅/节点、私人白名单、私人插件或用户目录绝对路径。
-- 新的外部二进制默认禁止进入网络版；必须先有可审计来源、明确授权和独立安全评审。
-- Python 环境只放在 `.runtime/venv`，构建产物只放在 `artifacts/`，两者都不提交。
-- 工具箱安装程序、私人状态和缓存必须位于当前克隆下 `.runtime/CompanyAIHelpers`；不得放入 Codex 目录或 AppData。旧目录迁移前必须备份并核对精确所有权。
-- 私人插件只存在 `%CODEXTOOLS_DATA_ROOT%\CodexTools\PrivatePlugins`，不同步、不上传。
-- 不得让更新器追踪开发分支、强制覆盖本地改动或从非 GitHub 远程更新。
-
-- 2026-10-09 用户明确更正：个人状态与共享程序隔离。程序仍在 `.runtime/CompanyAIHelpers/<Tool>`，个人状态和私人插件在 `.runtime/CompanyAIHelpers/Users/<Windows SID>/<Tool>`；旧平铺状态不自动认领。不读取、比较、哈希或上传私人状态及其清单来解决公共版本冲突，历史整目录迁移已停用。
+- This branch distributes the formal CodexTools installer and user documentation. Legacy scattered source is preserved on legacy/scattered-toolbox; do not restore its bootstrap instructions here.
+- Publish tested Setup assets through GitHub Releases. Keep the existing CodexTools-Plugins catalog address stable.
+- Do not include credentials, personal state, company connection settings, private development paths or diagnostic logs.
+- Plugin business code and runtime dependencies belong to independently versioned plugins. Verify plugin updates with an unchanged host executable.
