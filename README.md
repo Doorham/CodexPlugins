@@ -8,6 +8,16 @@ Windows 上的 Codex 工具箱。当前版本 **0.32.30**，UpdreamBridge **1.4.
 
 下载 `CodexTools-Setup-0.32.30.exe`，双击安装或更新。工具箱无需自行克隆源码、配置Python环境或编译；使用Windows 10/11，界面需要Microsoft Edge WebView2 Runtime。
 
+普通用户下载并运行 **Setup.exe** 即可安装工具箱，插件由工具箱内的“插件中心”下载安装、解压和更新。
+
+| Release 文件 | 用途 |
+| --- | --- |
+| `CodexTools-Setup-0.32.30.exe` | 工具箱正式安装／更新程序。 |
+| `UpdreamBridge-1.4.0.zip` | UDB 独立插件包；正常使用插件中心即可，不必手动下载解压。 |
+| `SHA256SUMS.txt` | 可选的下载校验信息。 |
+
+GitHub 自动附带的 `Source code (zip / tar.gz)` 是此发布仓库的说明文件快照，不是工具箱安装包，也不是 Setup 必需的配套解压包。
+
 这次先更新工具箱，再在“本机”页更新UpdreamBridge至1.4.0；未装的从“插件中心”安装。UDB模型、图片／视频校验和第三方接口归插件，后续同协议业务变更只更新插件。原有登录、配置与任务记录保留。
 
 [本版更新说明](RELEASE-NOTES.md) · [插件库](https://github.com/Doorham/CodexTools-Plugins)
