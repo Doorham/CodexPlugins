@@ -1,6 +1,6 @@
 # CodexTools · 正式安装版
 
-Windows 上的 Codex 工具箱。当前版本 **0.32.30**，UpdreamBridge **1.4.0**。
+Windows 上的 Codex 工具箱。当前版本 **0.32.30**，UpdreamBridge **1.5.0**。
 
 ## 下载与更新
 
@@ -13,18 +13,18 @@ Windows 上的 Codex 工具箱。当前版本 **0.32.30**，UpdreamBridge **1.4.
 | Release 文件 | 用途 |
 | --- | --- |
 | `CodexTools-Setup-0.32.30.exe` | 工具箱正式安装／更新程序。 |
-| `UpdreamBridge-1.4.0.zip` | UDB 独立插件包；正常使用插件中心即可，不必手动下载解压。 |
+| [UpdreamBridge-1.5.0.zip](https://github.com/Doorham/CodexTools-Plugins/releases/download/updream-bridge-v1.5.0/UpdreamBridge-1.5.0.zip) | UDB 最新独立插件包，位于插件库 Release；正常使用插件中心即可。 |
 | `SHA256SUMS.txt` | 可选的下载校验信息。 |
 
 GitHub 自动附带的 `Source code (zip / tar.gz)` 是此发布仓库的说明文件快照，不是工具箱安装包，也不是 Setup 必需的配套解压包。
 
-这次先更新工具箱，再在“本机”页更新UpdreamBridge至1.4.0；未装的从“插件中心”安装。UDB模型、图片／视频校验和第三方接口归插件，后续同协议业务变更只更新插件。原有登录、配置与任务记录保留。
+UDB 1.5.0 新增 Seedream 5.5。已使用工具箱0.32.30或更新版本时，在“本机 → 更新插件”更新UDB即可；未装的从“插件中心”安装。更旧工具箱需先完成此前的一次架构迁移。UDB模型、图片／视频校验和第三方接口归插件，后续同协议业务变更只更新插件。原有登录、配置与任务记录保留。
 
-[本版更新说明](RELEASE-NOTES.md) · [插件库](https://github.com/Doorham/CodexTools-Plugins)
+[工具箱更新说明](RELEASE-NOTES.md) · [UDB 1.5.0 更新说明](https://github.com/Doorham/CodexTools-Plugins/releases/tag/updream-bridge-v1.5.0) · [插件库](https://github.com/Doorham/CodexTools-Plugins)
 
 ## 主要能力
 
-插件中心按需安装和更新，包含语音监听、完成提示音、环境检测、图片／视频创作等工具。UDB收录绘梦2.1及原图片模型，并支持Seedance2.5、Seedance2.0和Wan3.0对应的视频模式。第三方生成服务按其自身账号、额度与计费规则使用。
+插件中心按需安装和更新，包含语音监听、完成提示音、环境检测、图片／视频创作等工具。UDB收录Seedream5.5、绘梦2.1及原图片模型，并支持Seedance2.5、Seedance2.0和Wan3.0对应的视频模式。第三方生成服务按其自身账号、额度与计费规则使用。
 
 程序、插件和个人状态保存在本机 `%LOCALAPPDATA%\CodexTools`，插件更新不要求重新登录；本仓库和安装包不包含个人登录数据。
 
